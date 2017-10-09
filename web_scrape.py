@@ -3,6 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from collections import defaultdict
+import time
 
 def retrieve_key(file_path, api):
     with open(file_path) as f:
@@ -32,7 +33,15 @@ def run_selenium(base_url, topics):
 
 
 def scrape(url_dictionary):
-    pass
+    topics = url_dictionary.keys()
+    for top in topics:
+        url_list = url_dictionary[top]
+        for url in url_list:
+            req = requests.get(url
+
+            time.sleep(15)
+
+
 
 if __name__ == '__main__':
     # path = '/Users/npng/.ssh/api_keys.txt'

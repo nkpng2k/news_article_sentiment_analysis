@@ -7,6 +7,7 @@ import time
 import pymongo
 import socks
 import socket
+import sys
 
 # def retrieve_key(file_path, api):
 #     with open(file_path) as f:
@@ -39,6 +40,9 @@ def run_selenium(base_url, topics):
         for url in urls:
             url_dict[topic].append(str(url.get_attribute('href')))
     driver.quit()
+
+    for k in url_dict.keys():
+        print len(url_dict[k])
     return url_dict
 
 
@@ -51,6 +55,7 @@ def one_request(url, topic):
         try:
             soup = BeautifulSoup(req.text, 'html.parser')
             headline = soup.find_all('h1', class_='headline')[0].contents[0]
+            headline = headline.replace('.','')
             author = soup.find_all('span', class_= 'byline-author')[0]['data-byline-name']
             date = soup.find_all('time', class_= 'dateline')[0]['datetime']
             paragraphs = soup.find_all('p', class_='story-body-text story-content')
@@ -61,6 +66,8 @@ def one_request(url, topic):
 
             for item in [author, date, article, topic]:
                 article_dict[headline].append(item)
+
+            print headline, author, date, article[:25]
         except:
             print "ERROR MOVING ON"
 
@@ -80,7 +87,7 @@ def scrape(url_dictionary, coll):
                 coll.insert_one(art)
             except:
                 error_count += 1
-                print "error adding to mongo, moving on, error count: {}".format(error_count)
+                print "error", sys.exc_info()[0], "error count: {}".format(error_count)
             print 'Moving To Next Article in 30 seconds'
             time.sleep(30)
         print 'COMPLETE ALL ARTICLES'
@@ -102,11 +109,11 @@ if __name__ == '__main__':
     # payload = {'api-key': api_key}
     # html_str = single_query(link, payload)
 
-    socks.setdefaultproxy(proxy_type=socks.PROXY_TYPE_SOCKS5, addr="127.0.0.1", port=9050)
-    socket.socket = socks.socksocket
-    print requests.get("http://icanhazip.com").text
+    # socks.setdefaultproxy(proxy_type=socks.PROXY_TYPE_SOCKS5, addr="127.0.0.1", port=9050)
+    # socket.socket = socks.socksocket
+    # print requests.get("http://icanhazip.com").text
     mongo_coll = launch_mongo('news_articles', 'nyt_articles')
-    topics = ['politics', 'business', 'world', 'us', 'science', 'health']
+    topics = ['politics', 'business', 'world', 'us'] #['science', 'health']
     base_url = 'https://www.nytimes.com/section/'
     url_dict = run_selenium(base_url, topics)
     scrape(url_dict, mongo_coll)

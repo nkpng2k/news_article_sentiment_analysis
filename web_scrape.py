@@ -9,21 +9,6 @@ import socks
 import socket
 import sys
 
-# def retrieve_key(file_path, api):
-#     with open(file_path) as f:
-#         for line in f:
-#             if line.startswith(api):
-#                 api_key = line.split(':')[1].strip()
-#         return api_key
-#
-#
-# def single_query(link, payload):
-#     response = requests.get(link, params=payload)
-#     if response.status_code != 200:
-#         print 'WARNING', response.status_code
-#     else:
-#         return response.json()
-
 
 def run_selenium(base_url, topics):
     driver = webdriver.Chrome('/Users/npng/.ssh/chromedriver')

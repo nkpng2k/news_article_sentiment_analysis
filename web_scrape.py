@@ -32,7 +32,7 @@ def run_selenium(base_url, topics):
         for i in xrange(10):
             print 'scrolling once'
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(5)
+            time.sleep(2.5)
         urls = driver.find_elements_by_class_name('story-link')
         for url in urls:
             url_dict[topic].append(str(url.get_attribute('href')))
@@ -43,20 +43,24 @@ def run_selenium(base_url, topics):
 def one_request(url, topic):
     article_dict = defaultdict(list)
     req = requests.get(url)
-    if response.status_code != 200:
-        print 'WARNING', response.status_code
+    if req.status_code != 200:
+        print 'WARNING', req.status_code
     else:
-        soup = BeautifulSoup(req.text, 'html.parser')
-        headline = soup.find_all('h1', class_='headline')[0].contents[0]
-        author = soup.find_all('span', class_= 'byline-author')[0]['data-byline-name']
-        date = soup.find_all('time', class_= 'dateline')[0]['datetime']
-        paragraphs = soup.find_all('p', class_='story-body-text story-content')
-        article = ''
-        for p in paragraphs:
-            article = article + p.get_text()
+        try:
+            soup = BeautifulSoup(req.text, 'html.parser')
+            headline = soup.find_all('h1', class_='headline')[0].contents[0]
+            author = soup.find_all('span', class_= 'byline-author')[0]['data-byline-name']
+            date = soup.find_all('time', class_= 'dateline')[0]['datetime']
+            paragraphs = soup.find_all('p', class_='story-body-text story-content')
+            article = ''
 
-        for item in [author, date, article, topic]:
-            article_dict[headline].append(item)
+            for p in paragraphs:
+                article = article + p.get_text()
+
+            for item in [author, date, article, topic]:
+                article_dict[headline].append(item)
+        except:
+            print "ERROR MOVING ON"
 
     return article_dict
 
@@ -64,12 +68,17 @@ def one_request(url, topic):
 def scrape(url_dictionary, coll):
     topics = url_dictionary.keys()
     for top in topics:
+        error_count = 0
         print 'Starting --> Topic: {}'.format(top)
         url_list = url_dictionary[top]
         for url in url_list:
             print 'Starting --> Topic: {} --- URL: {}'.format(top, url)
             art = one_request(url, top)
-            coll.insert_one(art)
+            try:
+                coll.insert_one(art)
+            except:
+                error_count += 1
+                print "error adding to mongo, moving on, error count: {}".format(error_count)
             print 'Moving To Next Article in 30 seconds'
             time.sleep(30)
         print 'COMPLETE ALL ARTICLES'

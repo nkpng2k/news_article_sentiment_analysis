@@ -5,6 +5,8 @@ from selenium import webdriver
 from collections import defaultdict
 import time
 import pymongo
+import socks
+import socket
 
 # def retrieve_key(file_path, api):
 #     with open(file_path) as f:
@@ -100,6 +102,9 @@ if __name__ == '__main__':
     # payload = {'api-key': api_key}
     # html_str = single_query(link, payload)
 
+    socks.setdefaultproxy(proxy_type=socks.PROXY_TYPE_SOCKS5, addr="127.0.0.1", port=9050)
+    socket.socket = socks.socksocket
+    print requests.get("http://icanhazip.com").text
     mongo_coll = launch_mongo('news_articles', 'nyt_articles')
     topics = ['politics', 'business', 'world', 'us', 'science', 'health']
     base_url = 'https://www.nytimes.com/section/'

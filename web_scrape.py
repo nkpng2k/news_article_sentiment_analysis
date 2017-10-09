@@ -37,8 +37,15 @@ def scrape(url_dictionary):
     for top in topics:
         url_list = url_dictionary[top]
         for url in url_list:
-            req = requests.get(url
-
+            req = requests.get(url)
+            soup = BeautifulSoup(req.text)
+            #NOTE: need to get headline and author
+            paragraphs = soup.find_all('p', class_='story-body-text story-content')
+            article = ''
+            for p in paragraphs:
+                article = article + p.get_text()
+            #NOTE: have single article, author, and headline --> add this to a list?
+            
             time.sleep(15)
 
 

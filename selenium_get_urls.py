@@ -58,27 +58,43 @@ class SeleniumUrls(object):
         Outputs: None
         """
         driver = webdriver.Chrome('/Users/npng/.ssh/chromedriver')
-        for i in xrange(1, num_pages+1):
-            page_number = i
-            increment_ten = i*10
-            increment_twenty = i*20
-            site_url = url_base.format(pg_num = page_number,inc_ten = increment_ten,inc_twenty = increment_twenty)
-            driver.get(site_url)
-            print "loaded page {}, waiting 10 seconds".format(i)
-            time.sleep(10)
-            urls = driver.find_elements_by_class_name(class_name)[0].find_elements_by_tag_name(tag)
-            urls, driver = self._check_health(driver, urls, site_url, class_name, tag)
-            article_urls = self._retrieve_urls(urls, art_id)
+        if date_ranges:
+            for dates in date_ranges:
+                from_date, to_date = dates
+                for i in xrange(num_pages):
+                    page_number = i
+                    increment_ten = i*10
+                    increment_twenty = i*20
+                    site_url = url_base.format(pg_num = page_number,inc_ten = increment_ten,inc_twenty = increment_twenty, from_date = from_date, to_date = to_date)
+                    driver.get(site_url)
+                    print "loaded page {}, waiting 10 seconds".format(i)
+                    time.sleep(10)
+                    urls = driver.find_elements_by_class_name(class_name)[0].find_elements_by_tag_name(tag)
+                    urls, driver = self._check_health(driver, urls, site_url, class_name, tag)
+                    article_urls = self._retrieve_urls(urls, art_id)
 
-            self.coll.find_one_and_update({'site':self.site_name}, { '$addToSet':{'urls':{ '$each' : article_urls}}}, upsert = True)
+                    self.coll.find_one_and_update({'site':self.site_name}, { '$addToSet':{'urls':{ '$each' : article_urls}}}, upsert = True)
 
-            print "page {} done".format(i)
+                    print "page {} done".format(i)
+        else:
+            for i in xrange(1, num_pages+1):
+                page_number = i
+                increment_ten = i*10
+                increment_twenty = i*20
+                site_url = url_base.format(pg_num = page_number,inc_ten = increment_ten,inc_twenty = increment_twenty)
+                driver.get(site_url)
+                print "loaded page {}, waiting 10 seconds".format(i)
+                time.sleep(10)
+                urls = driver.find_elements_by_class_name(class_name)[0].find_elements_by_tag_name(tag)
+                urls, driver = self._check_health(driver, urls, site_url, class_name, tag)
+                article_urls = self._retrieve_urls(urls, art_id)
+
+                self.coll.find_one_and_update({'site':self.site_name}, { '$addToSet':{'urls':{ '$each' : article_urls}}}, upsert = True)
+
+                print "page {} done".format(i)
         driver.quit()
 
 if __name__ == '__main__':
-    page_number = 1
-    increments_twenty = 0
-    increment_ten = 0
     nyt = "https://query.nytimes.com/search/sitesearch/?action=click&contentCollection&region=TopBar&WT.nav=searchWidget&module=SearchSubmit&pgtype=Homepage#/politics/from{from_date}to{to_date}/document_type%3A%22article%22/{pg_num}/allauthors/newest/"
     guardian = "https://www.theguardian.com/us-news/us-politics?page={pg_num}"
     wash_post = "https://www.washingtonpost.com/newssearch/?query=politics&sort=Date&datefilter=All%20Since%202005&contenttype=Article&spellcheck&startat={inc_twenty}#top"
@@ -87,9 +103,12 @@ if __name__ == '__main__':
     fox = "http://www.foxnews.com/search-results/search?q=politics&ss=fn&sort=latest&start={inc_ten}"
 
 
-    # #NYT --> element = searchResults, tag = a
-    # nyt_selenium = SeleniumUrls(db_name = 'news_articles', collection_name = 'urls', site_name = 'nyt')
-    # nyt_selenium.get_urls_page_number(nyt, 1500, 'searchResults', 'a')
+    #NYT --> element = searchResults, tag = a
+    d_ranges = [('20171001','20171031'), ('20170901','20170930'), ('20170801', '20170830'),\
+                ('20170701', '20170730'), ('20170601', '20170630'), ('20170501', '20170530'), ('20170401', '20170430'),\
+                ('20170301', '20170430'), ('20170301', '20170330'), ('20170201', '20170228'), ('20170101', '20170130')]
+    nyt_selenium = SeleniumUrls(db_name = 'news_articles', collection_name = 'urls', site_name = 'nyt')
+    nyt_selenium.get_urls_page_number(nyt, 100, 'searchResults', 'a', date_ranges = d_ranges)
 
     #WSJ --> element = search-results-sector, tag = a, art_id = 'articles'
     wsj_selenium = SeleniumUrls(db_name = 'news_articles', collection_name = 'urls', site_name = 'wsj')
@@ -102,6 +121,16 @@ if __name__ == '__main__':
     #washington post --> element = 'pb-results-container', tag = a , art_id = www.washingtonpost.com, INCREMENTS!
     wash_post_selenium = SeleniumUrls(db_name = 'news_articles', collection_name = 'urls', site_name = 'wash_post')
     wash_post_selenium.get_urls_page_number(wash_post, 500, 'pb-results-container', 'a', art_id = 'www.washingtonpost.com')
+
+    #cnn --> element = cnn-search__results, tag = a, art_id = www.cnn.com
+    cnn_selenium = SeleniumUrls(db_name = 'news_articles', collection_name = 'urls', site_name = 'cnn')
+    cnn_selenium.get_urls_page_number(cnn, 1000, 'cnn-search__results', 'a', art_id = 'www.cnn.com')
+
+    #fox --> element = ng-scope , tag = a, art_id = www.foxnews.com
+    fox_selenium = SeleniumUrls(db_name = 'news_articles', collection_name = 'urls', site_name = 'fox')
+    fox_selenium.get_urls_page_number(fox, 1000, 'ng-scope', 'a', art_id = 'www.foxnews.com')
+
+
 
 
     # driver = webdriver.Chrome('/Users/npng/.ssh/chromedriver')

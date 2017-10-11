@@ -50,19 +50,19 @@ class SeleniumUrls(object):
         return article_urls
 
 
-    def get_urls_page_number(self, url_base, num_pages, class_name, tag , art_id = None, increments = None):
+    def get_urls_page_number(self, url_base, num_pages, class_name, tag , date_ranges = None, art_id = None):
         """
         Launches Mongo instance and stores urls in collection within database
         Inputs: url_base: base url --> format, "www.-----/page={}".format(page_number)
                 num_pages: number of pages wanted to scrape , currently about 10 per page so need ~1000 pages
-                increments: some websites have both page number and increment if None provided, ignore
         Outputs: None
         """
         driver = webdriver.Chrome('/Users/npng/.ssh/chromedriver')
         for i in xrange(1, num_pages+1):
             page_number = i
             increment_ten = i*10
-            site_url = url_base.format(page_number)
+            increment_twenty = i*20
+            site_url = url_base.format(pg_num = page_number,inc_ten = increment_ten,inc_twenty = increment_twenty)
             driver.get(site_url)
             print "loaded page {}, waiting 10 seconds".format(i)
             time.sleep(10)
@@ -79,20 +79,29 @@ if __name__ == '__main__':
     page_number = 1
     increments_twenty = 0
     increment_ten = 0
-    nyt = "https://query.nytimes.com/search/sitesearch/?action=click&contentCollection&region=TopBar&WT.nav=searchWidget&module=SearchSubmit&pgtype=Homepage#/politics/since1851/document_type%3A%22article%22/{}/allauthors/newest/"
-    guardian = "https://www.theguardian.com/us-news/us-politics?page={}"
-    wash_post = "https://www.washingtonpost.com/newssearch/?query=politics&sort=Date&datefilter=All%20Since%202005&contenttype=Article&spellcheck&startat={}#top".format(increments_twenty)
-    wsj = "https://www.wsj.com/search/term.html?KEYWORDS=politics&min-date=2013/10/09&max-date=2017/10/09&page={}&isAdvanced=true&daysback=4y&andor=AND&sort=date-desc&source=wsjarticle"
-    cnn = "http://www.cnn.com/search/?q=politics&size=10&page={}&type=article&from={}".format(page_number, increment_ten)
-    fox = "http://www.foxnews.com/search-results/search?q=politics&ss=fn&sort=latest&start={}".format(increment_ten)
+    nyt = "https://query.nytimes.com/search/sitesearch/?action=click&contentCollection&region=TopBar&WT.nav=searchWidget&module=SearchSubmit&pgtype=Homepage#/politics/from{from_date}to{to_date}/document_type%3A%22article%22/{pg_num}/allauthors/newest/"
+    guardian = "https://www.theguardian.com/us-news/us-politics?page={pg_num}"
+    wash_post = "https://www.washingtonpost.com/newssearch/?query=politics&sort=Date&datefilter=All%20Since%202005&contenttype=Article&spellcheck&startat={inc_twenty}#top"
+    wsj = "https://www.wsj.com/search/term.html?KEYWORDS=politics&min-date=2013/10/09&max-date=2017/10/09&page={pg_num}&isAdvanced=true&daysback=4y&andor=AND&sort=date-desc&source=wsjarticle"
+    cnn = "http://www.cnn.com/search/?q=politics&size=10&page={pg_num}&type=article&from={inc_ten}"
+    fox = "http://www.foxnews.com/search-results/search?q=politics&ss=fn&sort=latest&start={inc_ten}"
 
 
-    #NYT --> element = searchResults, tag = a
-    nyt_selenium = SeleniumUrls(db_name = 'news_articles', collection_name = 'urls', site_name = 'nyt')
-    nyt_selenium.get_urls_page_number(nyt, 1500, 'searchResults', 'a')
+    # #NYT --> element = searchResults, tag = a
+    # nyt_selenium = SeleniumUrls(db_name = 'news_articles', collection_name = 'urls', site_name = 'nyt')
+    # nyt_selenium.get_urls_page_number(nyt, 1500, 'searchResults', 'a')
 
+    #WSJ --> element = search-results-sector, tag = a, art_id = 'articles'
     wsj_selenium = SeleniumUrls(db_name = 'news_articles', collection_name = 'urls', site_name = 'wsj')
     wsj_selenium.get_urls_page_number(wsj, 750, 'search-results-sector', 'a', art_id = 'articles')
+
+    #guardian --> element = l-side-margins, tag = a, art_id = www.theguardian.com
+    guardian_selenium = SeleniumUrls(db_name = 'news_articles', collection_name = 'urls', site_name = 'guardian')
+    guardian_selenium.get_urls_page_number(guardian, 1000, 'l-side-margins', 'a', art_id = 'www.theguardian.com')
+
+    #washington post --> element = 'pb-results-container', tag = a , art_id = www.washingtonpost.com, INCREMENTS!
+    wash_post_selenium = SeleniumUrls(db_name = 'news_articles', collection_name = 'urls', site_name = 'wash_post')
+    wash_post_selenium.get_urls_page_number(wash_post, 500, 'pb-results-container', 'a', art_id = 'www.washingtonpost.com')
 
 
     # driver = webdriver.Chrome('/Users/npng/.ssh/chromedriver')

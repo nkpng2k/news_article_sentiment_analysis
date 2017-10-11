@@ -26,6 +26,30 @@ class SeleniumUrls(object):
 
         return coll
 
+    def _check_health(self, driver, urls, site_url, class_name, tag):
+        if len(urls) < 1:
+            print 'reloading driver'
+            driver.quit()
+            driver = webdriver.Chrome('/Users/npng/.ssh/chromedriver')
+            driver.get(site_url)
+            time.sleep(10)
+            urls = driver.find_elements_by_class_name(class_name)[0].find_elements_by_tag_name(tag)
+        return urls, driver
+
+    def _retrieve_urls(self, urls, art_id):
+        article_urls = []
+        print len(urls)
+        for url in urls:
+            candidate_url = str(url.get_attribute('href'))
+            if art_id:
+                if art_id in candidate_url.split('/'):
+                    article_urls.append(candidate_url)
+            else:
+                article_urls.append(candidate_url)
+
+        return article_urls
+
+
     def get_urls_page_number(self, url_base, num_pages, class_name, tag , art_id = None, increments = None):
         """
         Launches Mongo instance and stores urls in collection within database
@@ -38,19 +62,13 @@ class SeleniumUrls(object):
         for i in xrange(1, num_pages+1):
             page_number = i
             increment_ten = i*10
-            article_urls = []
-            driver.get(url_base.format(page_number))
-            print "loaded page {}, waiting 2.5 seconds".format(i)
-            time.sleep(2.5)
+            site_url = url_base.format(page_number)
+            driver.get(site_url)
+            print "loaded page {}, waiting 10 seconds".format(i)
+            time.sleep(10)
             urls = driver.find_elements_by_class_name(class_name)[0].find_elements_by_tag_name(tag)
-            print len(urls)
-            for url in urls:
-                candidate_url = str(url.get_attribute('href'))
-                if art_id:
-                    if art_id in candidate_url.split('/'):
-                        article_urls.append(candidate_url)
-                else:
-                    article_urls.append(candidate_url)
+            urls, driver = self._check_health(driver, urls, site_url, class_name, tag)
+            article_urls = self._retrieve_urls(urls, art_id)
 
             self.coll.find_one_and_update({'site':self.site_name}, { '$addToSet':{'urls':{ '$each' : article_urls}}}, upsert = True)
 
@@ -71,10 +89,10 @@ if __name__ == '__main__':
 
     #NYT --> element = searchResults, tag = a
     nyt_selenium = SeleniumUrls(db_name = 'news_articles', collection_name = 'urls', site_name = 'nyt')
-    nyt_selenium.get_urls_page_number(nyt, 1000, 'searchResults', 'a')
+    nyt_selenium.get_urls_page_number(nyt, 1500, 'searchResults', 'a')
 
     wsj_selenium = SeleniumUrls(db_name = 'news_articles', collection_name = 'urls', site_name = 'wsj')
-    wsj_selenium.get_urls_page_number(wsj, 500, 'search-results-sector', 'a', art_id = 'articles')
+    wsj_selenium.get_urls_page_number(wsj, 750, 'search-results-sector', 'a', art_id = 'articles')
 
 
     # driver = webdriver.Chrome('/Users/npng/.ssh/chromedriver')

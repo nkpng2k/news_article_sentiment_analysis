@@ -60,7 +60,7 @@ class SeleniumUrls(object):
         print "loaded page {}, waiting 10 seconds".format(page_number)
         time.sleep(10)
         urls = self.driver.find_elements_by_class_name(class_name)[0].find_elements_by_tag_name(tag)
-        urls = self._check_health(driver, urls, site_url, class_name, tag)
+        urls = self._check_health(urls, site_url, class_name, tag)
         article_urls = self._retrieve_urls(urls, art_id)
 
         self.coll.find_one_and_update({'site':self.site_name}, { '$addToSet':{'urls':{ '$each' : article_urls}}}, upsert = True)

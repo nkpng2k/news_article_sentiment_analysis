@@ -18,6 +18,8 @@ class SeleniumUrls(object):
         self.collection_name = collection_name
         self.coll = self._launch_mongo(uri)
         self.site_name = site_name
+        self.driver = None
+        self.file = open(db_name+'.csv', 'a')
 
     def _launch_mongo(self, uri = None):
         mc = pymongo.MongoClient(uri)
@@ -26,15 +28,15 @@ class SeleniumUrls(object):
 
         return coll
 
-    def _check_health(self, driver, urls, site_url, class_name, tag):
+    def _check_health(self, urls, site_url, class_name, tag):
         if len(urls) < 1:
             print 'reloading driver'
-            driver.quit()
-            driver = webdriver.Chrome('/Users/npng/.ssh/chromedriver')
-            driver.get(site_url)
+            self.driver.quit()
+            self.driver = webdriver.Chrome('/Users/npng/.ssh/chromedriver')
+            self.driver.get(site_url)
             time.sleep(10)
-            urls = driver.find_elements_by_class_name(class_name)[0].find_elements_by_tag_name(tag)
-        return urls, driver
+            urls = self.driver.find_elements_by_class_name(class_name)[0].find_elements_by_tag_name(tag)
+        return urls
 
     def _retrieve_urls(self, urls, art_id):
         article_urls = []
@@ -49,6 +51,21 @@ class SeleniumUrls(object):
 
         return article_urls
 
+    def _scrape(self, pg_num, url_base, class_name, tag, art_id = None, from_date = None, to_date = None):
+        page_number = pg_num
+        increment_ten = pg_num*10
+        increment_twenty = pg_num*20
+        site_url = url_base.format(pg_num = page_number,inc_ten = increment_ten,inc_twenty = increment_twenty, from_date = from_date, to_date = to_date)
+        self.driver.get(site_url)
+        print "loaded page {}, waiting 10 seconds".format(page_number)
+        time.sleep(10)
+        urls = self.driver.find_elements_by_class_name(class_name)[0].find_elements_by_tag_name(tag)
+        urls = self._check_health(driver, urls, site_url, class_name, tag)
+        article_urls = self._retrieve_urls(urls, art_id)
+
+        self.coll.find_one_and_update({'site':self.site_name}, { '$addToSet':{'urls':{ '$each' : article_urls}}}, upsert = True)
+
+        print "page {} done".format(page_number)
 
     def get_urls_page_number(self, url_base, num_pages, class_name, tag , date_ranges = None, art_id = None):
         """
@@ -57,42 +74,16 @@ class SeleniumUrls(object):
                 num_pages: number of pages wanted to scrape , currently about 10 per page so need ~1000 pages
         Outputs: None
         """
-        driver = webdriver.Chrome('/Users/npng/.ssh/chromedriver')
+        self.driver = webdriver.Chrome('/Users/npng/.ssh/chromedriver')
         if date_ranges:
             for dates in date_ranges:
                 from_date, to_date = dates
-                for i in xrange(num_pages):
-                    page_number = i
-                    increment_ten = i*10
-                    increment_twenty = i*20
-                    site_url = url_base.format(pg_num = page_number,inc_ten = increment_ten,inc_twenty = increment_twenty, from_date = from_date, to_date = to_date)
-                    driver.get(site_url)
-                    print "loaded page {}, waiting 10 seconds".format(i)
-                    time.sleep(10)
-                    urls = driver.find_elements_by_class_name(class_name)[0].find_elements_by_tag_name(tag)
-                    urls, driver = self._check_health(driver, urls, site_url, class_name, tag)
-                    article_urls = self._retrieve_urls(urls, art_id)
-
-                    self.coll.find_one_and_update({'site':self.site_name}, { '$addToSet':{'urls':{ '$each' : article_urls}}}, upsert = True)
-
-                    print "page {} done".format(i)
+                for i in xrange(1, num_pages+1):
+                    self._scrape(i, url_base, class_name, tag, art_id, from_date, to_date)
         else:
             for i in xrange(1, num_pages+1):
-                page_number = i
-                increment_ten = i*10
-                increment_twenty = i*20
-                site_url = url_base.format(pg_num = page_number,inc_ten = increment_ten,inc_twenty = increment_twenty)
-                driver.get(site_url)
-                print "loaded page {}, waiting 10 seconds".format(i)
-                time.sleep(10)
-                urls = driver.find_elements_by_class_name(class_name)[0].find_elements_by_tag_name(tag)
-                urls, driver = self._check_health(driver, urls, site_url, class_name, tag)
-                article_urls = self._retrieve_urls(urls, art_id)
-
-                self.coll.find_one_and_update({'site':self.site_name}, { '$addToSet':{'urls':{ '$each' : article_urls}}}, upsert = True)
-
-                print "page {} done".format(i)
-        driver.quit()
+                self.scrape(i, url_base, class_name, tag, art_id)
+        self.driver.quit()
 
 if __name__ == '__main__':
     nyt = "https://query.nytimes.com/search/sitesearch/?action=click&contentCollection&region=TopBar&WT.nav=searchWidget&module=SearchSubmit&pgtype=Homepage#/politics/from{from_date}to{to_date}/document_type%3A%22article%22/{pg_num}/allauthors/newest/"
@@ -129,21 +120,6 @@ if __name__ == '__main__':
     #fox --> element = ng-scope , tag = a, art_id = www.foxnews.com
     fox_selenium = SeleniumUrls(db_name = 'news_articles', collection_name = 'urls', site_name = 'fox')
     fox_selenium.get_urls_page_number(fox, 1000, 'ng-scope', 'a', art_id = 'www.foxnews.com')
-
-
-
-
-    # driver = webdriver.Chrome('/Users/npng/.ssh/chromedriver')
-    # driver.get("https://www.wsj.com/search/term.html?KEYWORDS=politics&min-date=2013/10/09&max-date=2017/10/09&page=1&isAdvanced=true&daysback=4y&andor=AND&sort=date-desc&source=wsjarticle")
-    # urls = driver.find_elements_by_class_name('search-results-sector')[0].find_elements_by_tag_name('a')
-    # article_urls = []
-    # for url in urls:
-    #     candidate_url = str(url.get_attribute('href'))
-    #     if 'articles' in candidate_url.split('/'):
-    #         article_urls.append(candidate_url)
-    #
-    #
-    # article_urls
 
 
 """

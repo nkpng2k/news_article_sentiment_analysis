@@ -61,7 +61,7 @@ class SeleniumUrls(object):
 
         print "page {} done".format(page_number)
 
-    def get_urls_page_number(self, url_base, num_pages, class_name, tag , date_ranges = None, art_id = None):
+    def get_urls_page_number(self, url_base, num_pages, class_name, tag , start_page = 1, date_ranges = None, art_id = None):
         """
         Launches Mongo instance and stores urls in collection within database
         Inputs: url_base: base url --> format, "www.-----/page={}".format(page_number)
@@ -73,11 +73,11 @@ class SeleniumUrls(object):
         if date_ranges:
             for dates in date_ranges:
                 from_date, to_date = dates
-                for i in xrange(1, num_pages+1):
+                for i in xrange(start_page, num_pages+1):
                     self._scrape(i, class_name, tag, art_id, from_date, to_date)
         else:
-            for i in xrange(1, num_pages+1):
-                self.scrape(i, class_name, tag, art_id)
+            for i in xrange(start_page, num_pages+1):
+                self._scrape(i, class_name, tag, art_id)
         self.driver.quit()
 
 if __name__ == '__main__':
@@ -89,31 +89,31 @@ if __name__ == '__main__':
     fox = "http://www.foxnews.com/search-results/search?q=politics&ss=fn&sort=latest&start={inc_ten}"
     filepath = '/Users/npng/galvanize/dsi/news_article_sentiment_analysis/'
     #NYT --> element = searchResults, tag = a
-    d_ranges = [('20171001','20171031'), ('20170901','20170930'), ('20170801', '20170830'),\
-                ('20170701', '20170730'), ('20170601', '20170630'), ('20170501', '20170530'), ('20170401', '20170430'),\
-                ('20170301', '20170430'), ('20170301', '20170330'), ('20170201', '20170228'), ('20170101', '20170130')]
-    nyt_selenium = SeleniumUrls(filepath = filepath, csv_name = 'news_articles', site_name = 'nyt')
-    nyt_selenium.get_urls_page_number(nyt, 100, 'searchResults', 'a', date_ranges = d_ranges)
+    # d_ranges = [('20171001','20171031'), ('20170901','20170930'), ('20170801', '20170830'),\
+    #             ('20170701', '20170730'), ('20170601', '20170630'), ('20170501', '20170530'), ('20170401', '20170430'),\
+    #             ('20170301', '20170430'), ('20170301', '20170330'), ('20170201', '20170228'), ('20170101', '20170130')]
+    # nyt_selenium = SeleniumUrls(filepath = filepath, csv_name = 'news_articles', site_name = 'nyt')
+    # nyt_selenium.get_urls_page_number(nyt, 100, 'searchResults', 'a', date_ranges = d_ranges)
 
-    #WSJ --> element = search-results-sector, tag = a, art_id = 'articles'
-    wsj_selenium = SeleniumUrls(filepath = filepath, csv_name = 'news_articles', site_name = 'wsj')
-    wsj_selenium.get_urls_page_number(wsj, 750, 'search-results-sector', 'a', art_id = 'articles')
+    # #WSJ --> element = search-results-sector, tag = a, art_id = 'articles'
+    # wsj_selenium = SeleniumUrls(filepath = filepath, csv_name = 'news_articles', site_name = 'wsj')
+    # wsj_selenium.get_urls_page_number(wsj, 750, 'search-results-sector', 'a', start_page = 435, art_id = 'articles')
 
-    #guardian --> element = l-side-margins, tag = a, art_id = www.theguardian.com
-    guardian_selenium = SeleniumUrls(filepath = filepath, csv_name = 'news_articles', site_name = 'guardian')
-    guardian_selenium.get_urls_page_number(guardian, 1000, 'l-side-margins', 'a', art_id = 'www.theguardian.com')
-
-    #washington post --> element = 'pb-results-container', tag = a , art_id = www.washingtonpost.com, INCREMENTS!
-    wash_post_selenium = SeleniumUrls(filepath = filepath, csv_name = 'news_articles', site_name = 'wash_post')
-    wash_post_selenium.get_urls_page_number(wash_post, 500, 'pb-results-container', 'a', art_id = 'www.washingtonpost.com')
-
-    #cnn --> element = cnn-search__results, tag = a, art_id = www.cnn.com
-    cnn_selenium = SeleniumUrls(filepath = filepath, csv_name = 'news_articles', site_name = 'cnn')
-    cnn_selenium.get_urls_page_number(cnn, 1000, 'cnn-search__results', 'a', art_id = 'www.cnn.com')
+    # #guardian --> element = l-side-margins, tag = a, art_id = www.theguardian.com
+    # guardian_selenium = SeleniumUrls(filepath = filepath, csv_name = 'news_articles', site_name = 'guardian')
+    # guardian_selenium.get_urls_page_number(guardian, 1000, 'l-side-margins', 'a', start_page = 684, art_id = 'www.theguardian.com')
+    #
+    # #washington post --> element = 'pb-results-container', tag = a , art_id = www.washingtonpost.com, INCREMENTS!
+    # wash_post_selenium = SeleniumUrls(filepath = filepath, csv_name = 'news_articles', site_name = 'wash_post')
+    # wash_post_selenium.get_urls_page_number(wash_post, 500, 'pb-results-container', 'a', art_id = 'www.washingtonpost.com')
+    #
+    # #cnn --> element = cnn-search__results, tag = a, art_id = www.cnn.com
+    # cnn_selenium = SeleniumUrls(filepath = filepath, csv_name = 'news_articles', site_name = 'cnn')
+    # cnn_selenium.get_urls_page_number(cnn, 1000, 'cnn-search__results', 'a', art_id = 'www.cnn.com')
 
     #fox --> element = ng-scope , tag = a, art_id = www.foxnews.com
     fox_selenium = SeleniumUrls(filepath = filepath, csv_name = 'news_articles', site_name = 'fox')
-    fox_selenium.get_urls_page_number(fox, 1000, 'ng-scope', 'a', art_id = 'www.foxnews.com')
+    fox_selenium.get_urls_page_number(fox, 1000, 'ng-scope', 'a',start_page = 949, art_id = 'www.foxnews.com')
 
 
 """

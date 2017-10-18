@@ -2,6 +2,8 @@ import requests
 import spacy
 import re
 from stop_words import get_stop_words
+from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from collections import Counter
 from bs4 import BeautifulSoup
 from textblob import TextBlob
@@ -10,8 +12,10 @@ from textblob.sentiments import NaiveBayesAnalyzer, BaseSentimentAnalyzer
 
 class TextPreprocessor(object):
 
-    def __init__(self, stop_words = 'en'):
+    def __init__(self, stop_words = 'en', tfidf = True):
         self.stop_words = get_stop_words(stop_words)
+        self.vectorizer = None
+        self.tfidf = tfidf
 
     def _gen_request(self, url):
         req = requests.get(str(url.strip()))
@@ -28,7 +32,7 @@ class TextPreprocessor(object):
     def _tokenize_encode_ascii(self, article):
         encoded = [] #this tokenizes the data
         for word in article.split():
-            encoded.append(word.encode('ascii', 'ignore'))
+            encoded.append(word.encode('ascii', 'ignore').lower())
         return encoded
 
     def _remove_stop_words(self, tokens):
@@ -36,7 +40,22 @@ class TextPreprocessor(object):
         return stopped_tokens
 
     def _vectorize(self, tokens):
-        pass
+        if self.tfidf:
+            self.vectorizer = TfidfVectorizer()
+            vectorized = self.vectorizer.fit_transform(tokens)
+        else:
+            self.vectorizer = CountVectorizer()
+            vectorized = self.vectorizer.fit_transform(tokens)
+
+        return vectorized
+
+    def _return_top_words(self, model, feature_names, n_top_words = 50):
+        topic_dict = {}
+        for topic_idx, topic in enumerate(model.components_):
+            topic_top_n_words = [feature_names[i] for i in topic.argsort()[:-n_top_words - 1:-1]]
+            topic_dict[topic_idx] = topic_top_n_words
+
+        return topic_dict
 
     # ----------- non-private methods below this line -----------
 
@@ -51,12 +70,22 @@ class TextPreprocessor(object):
         clean = self._correct_sentences(article)
         return clean
 
-    def lda_dim_reduction(article):
+    def lda_dim_reduction(self, article):
         encoded_tokens = self._tokenize_encode_ascii(article)
         stopped_tokens = self._remove_stop_words(encoded_tokens)
         vectorized = self._vectorize(stopped_tokens)
+        lda = LatentDirichletAllocation(n_components = 3, learning_method = 'batch').fit(vectorized)
+        feature_names = self.vectorizer.get_feature_names()
+        topic_dict = self._return_top_words(lda, feature_names)
 
-        #TODO: use lda to isolate topics
+        return topic_dict
+
+
+    def print_top_words(self, model, feature_names, n_top_words):
+        for topic_idx, topic in enumerate(model.components_):
+            message = "Topic #%d: " % topic_idx
+            message += " ".join([feature_names[i] for i in topic.argsort()[:-n_top_words - 1:-1]])
+            print(message)
 
 
 #THIS I THINK WILL BE COMPLETED MUCH LATER
@@ -70,52 +99,6 @@ class TextPreprocessor(object):
 
 
 if __name__ == "__main__":
-    req = requests.get('http://www.foxnews.com/politics/2017/10/18/los-angeles-seeks-to-ban-tiki-torches-pepper-spray-shields-at-protests.html')
-    soup = BeautifulSoup(req.text, 'html.parser')
-    paragraphs = soup.find_all('p')
-
-    article = ''
-    for p in paragraphs:
-        article = article + p.get_text()
-    article = re.sub(r'(?<=[.!?])(?=[^\s])', r' \n', article)
-    article.split()
-    encoded = article.encode('ascii', ' ').split()
-    encoded = []
-    for word in article.split():
-        encoded.append(word.encode('ascii', 'ignore'))
-
-    stop_words = get_stop_words('en')
-    stopped_tokens = [tok for tok in encoded if tok not in stop_words]
-    stopped_tokens
-
-
-    blob = TextBlob(article, analyzer = NaiveBayesAnalyzer())
-
-    for sentence in blob.sentences:
-        print sentence, sentence.sentiment
-
-    test = TextBlob('stealing', analyzer = NaiveBayesAnalyzer())
-    test.sentiment
-
-    nlp = spacy.load('en')
-    doc = nlp(article)
-    list(doc.sents)
-    list(doc.noun_chunks)
-
-    for word in doc:
-        for character in word.string:
-            print word.string
-        # print word.text, word.orth_, word.lemma_, word.tag, word.tag_, word.pos, word.pos_
-
-
-    def pos_words(sentence, token, ptag):
-        sentences = [sent for sent in sentence.sents if token in sent.string]
-        pwrds = []
-        for sent in sentences:
-            for word in sent:
-                for character in word.string:
-                       pwrds.extend([child.string.strip() for child in word.children
-                                                          if child.pos_ == ptag] )
-        return Counter(pwrds).most_common(10)
-
-    pos_words(doc, 'weapons', 'VERB')
+    preprocessor = TextPreprocessor()
+    article_text = preprocessor.new_article('https://www.washingtonpost.com/local/virginia-politics/reeks-of-subtle-racism-tensions-after-black-candidate-left-off-fliers-in-virginia/2017/10/18/de74c47a-b425-11e7-a908-a3470754bbb9_story.html?utm_term=.2e8be491c0a3')
+    article_topics = preprocessor.lda_dim_reduction(article_text)

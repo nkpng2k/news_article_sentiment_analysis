@@ -6,9 +6,6 @@ from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from collections import Counter
 from bs4 import BeautifulSoup
-from textblob import TextBlob
-from textblob.sentiments import NaiveBayesAnalyzer, BaseSentimentAnalyzer
-
 
 class TextPreprocessor(object):
 
@@ -49,14 +46,6 @@ class TextPreprocessor(object):
 
         return vectorized
 
-    def _return_top_words(self, model, feature_names, n_top_words = 50):
-        topic_dict = {}
-        for topic_idx, topic in enumerate(model.components_):
-            topic_top_n_words = [feature_names[i] for i in topic.argsort()[:-n_top_words - 1:-1]]
-            topic_dict[topic_idx] = topic_top_n_words
-
-        return topic_dict
-
     # ----------- non-private methods below this line -----------
 
     def new_article(self, url):
@@ -70,25 +59,14 @@ class TextPreprocessor(object):
         clean = self._correct_sentences(article)
         return clean
 
-    def lda_dim_reduction(self, article):
+    def generate_vectors(self, article):
         encoded_tokens = self._tokenize_encode_ascii(article)
         stopped_tokens = self._remove_stop_words(encoded_tokens)
-        vectorized = self._vectorize(stopped_tokens)
-        lda = LatentDirichletAllocation(n_components = 3, learning_method = 'batch').fit(vectorized)
-        feature_names = self.vectorizer.get_feature_names()
-        topic_dict = self._return_top_words(lda, feature_names)
+        vectorized_tokens = self._vectorize(stopped_tokens)
 
-        return topic_dict
+        return self.vectorizer, vectorized_tokens
 
-
-    def print_top_words(self, model, feature_names, n_top_words):
-        for topic_idx, topic in enumerate(model.components_):
-            message = "Topic #%d: " % topic_idx
-            message += " ".join([feature_names[i] for i in topic.argsort()[:-n_top_words - 1:-1]])
-            print(message)
-
-
-#THIS I THINK WILL BE COMPLETED MUCH LATER
+#THIS I THINK WILL BE COMPLETED MUCH LATER NEEDS TO RUN ON ENTIRE CORPUS
     def db_pipeline(self, list_articles):
         for article in list_articles:
             cleaned = self._correct_sentences(article)
@@ -101,4 +79,4 @@ class TextPreprocessor(object):
 if __name__ == "__main__":
     preprocessor = TextPreprocessor()
     article_text = preprocessor.new_article('https://www.washingtonpost.com/local/virginia-politics/reeks-of-subtle-racism-tensions-after-black-candidate-left-off-fliers-in-virginia/2017/10/18/de74c47a-b425-11e7-a908-a3470754bbb9_story.html?utm_term=.2e8be491c0a3')
-    article_topics = preprocessor.lda_dim_reduction(article_text)
+    vectorizer, vectorized_tokens = preprocessor.generate_vectors(article_text)

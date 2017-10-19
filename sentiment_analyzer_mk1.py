@@ -1,6 +1,7 @@
 from preprocessor_mk1 import TextPreprocessor
 from textblob import TextBlob
 from textblob.sentiments import NaiveBayesAnalyzer, BaseSentimentAnalyzer
+from sklearn.decomposition import LatentDirichletAllocation
 
 class TextSentimentAnalysis(object):
 
@@ -30,9 +31,13 @@ class TextSentimentAnalysis(object):
             message += " ".join([feature_names[i] for i in topic.argsort()[:-n_top_words - 1:-1]])
             print(message)
 
+
 if __name__ == '__main__':
     prep = TextPreprocessor()
-    article_text = preprocessor.new_article('https://www.washingtonpost.com/local/virginia-politics/reeks-of-subtle-racism-tensions-after-black-candidate-left-off-fliers-in-virginia/2017/10/18/de74c47a-b425-11e7-a908-a3470754bbb9_story.html?utm_term=.2e8be491c0a3')
+    article_text = prep.new_article('https://www.washingtonpost.com/local/virginia-politics/reeks-of-subtle-racism-tensions-after-black-candidate-left-off-fliers-in-virginia/2017/10/18/de74c47a-b425-11e7-a908-a3470754bbb9_story.html?utm_term=.2e8be491c0a3')
     vectorizer, vectorized_tokens = prep.generate_vectors(article_text)
 
-    prep.
+    sentiment_analyzer = TextSentimentAnalysis()
+    topics_dict = sentiment_analyzer.lda_dim_reduction(vectorized_tokens, vectorizer)
+
+    topics_dict

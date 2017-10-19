@@ -38,9 +38,13 @@ class TextSentimentAnalysis(object):
 if __name__ == '__main__':
     prep = TextPreprocessor()
     article_text = prep.new_article('https://www.washingtonpost.com/local/virginia-politics/reeks-of-subtle-racism-tensions-after-black-candidate-left-off-fliers-in-virginia/2017/10/18/de74c47a-b425-11e7-a908-a3470754bbb9_story.html?utm_term=.2e8be491c0a3')
-    vectorizer, vectorized_tokens = prep.generate_vectors(article_text)
+    vectorizer, vectorized_tokens = prep.generate_vectors(article_text, lemmatize = True)
 
     sentiment_analyzer = TextSentimentAnalysis(article_text)
     topics_dict = sentiment_analyzer.lda_dim_reduction(vectorized_tokens, vectorizer)
 
-    topics_dict
+    blob = TextBlob(article_text, analyzer = NaiveBayesAnalyzer())
+    blob.sentiment
+
+    for sentence in blob.sentences:
+        print sentence, sentence.sentiment

@@ -5,8 +5,10 @@ from sklearn.decomposition import LatentDirichletAllocation
 
 class TextSentimentAnalysis(object):
 
-    def __init__(self, article):
+    def __init__(self, article, classifier_filepath):
         self.article = article
+        with open(classifier_filepath) as f:
+            self.classifier = pickle.load(f)
 
     def _return_top_words(self, model, feature_names, n_top_words = 50):
         topic_dict = {}
@@ -17,7 +19,7 @@ class TextSentimentAnalysis(object):
         return topic_dict
 
     def _whole_doc_sentiment(self):
-        blob = TextBlob(self.article, analyzer = NaiveBayesAnalyzer())
+        blob = TextBlob(self.article, classifier = self.classifier)
 
     # --------- All private methods above this line -------
 

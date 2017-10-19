@@ -1,5 +1,6 @@
 import pandas as pd
 from textblob.classifiers import NaiveBayesClassifier, MaxEntClassifier
+import pickle
 
 pol_df = pd.read_csv('data/politics.tsv', sep = '\t', header = None)
 adj_df = pd.read_csv('data/2000.tsv', sep = '\t', header = None)
@@ -34,7 +35,3 @@ prob_dist.prob('neg')
 nb_name = 'naivebayesclassifier.pkl'
 with open(nb_name, 'wb') as f:
     pickle.dump(nbc, f)
-
-
-with open('naivebayesclassifier.pkl') as f:
-    pickled_nbc = pickle.load(f)

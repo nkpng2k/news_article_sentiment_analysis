@@ -78,6 +78,9 @@ class TextSentimentAnalysis(object):
             vectorizer, vectorized_tokens = processor.generate_vectors(article, lemmatize = False)
             art_pred, sentiments_dict = self.find_article_sentiment(vectorized_tokens, vectorizer)
 
+    def cluster_by_topic_similarity(self):
+        pass
+
 
 
 

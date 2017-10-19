@@ -2,6 +2,7 @@ from preprocessor_mk1 import TextPreprocessor
 from textblob import TextBlob
 from textblob.sentiments import NaiveBayesAnalyzer
 from sklearn.decomposition import LatentDirichletAllocation
+import pickle
 
 class TextSentimentAnalysis(object):
 

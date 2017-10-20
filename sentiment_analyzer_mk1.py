@@ -8,17 +8,20 @@ import pymongo
 
 class TextSentimentAnalysis(object):
 
-    def __init__(self, article, classifier_filepath):
-        self.article = article
+    def __init__(self, classifier_filepath, processor):
         with open(classifier_filepath, 'rb') as f:
             self.classifier = pickle.load(f)
-        self.blob = TextBlob(self.article, classifier = self.classifier)
+        self.processor = processor
 
     def _launch_mongo(self, db_name, coll_name):
         mc = pymongo.MongoClient(self.uri)
         db = mc[db_name]
         coll = db[coll_name]
         return coll
+
+    def _create_blob(self, article):
+        blob = TextBlob(article, self.classifier)
+        return blob
 
     def _return_top_words(self, model, feature_names, n_top_words = 50):
         topic_dict = {}
@@ -28,17 +31,17 @@ class TextSentimentAnalysis(object):
 
         return topic_dict
 
-    def _whole_doc_sentiment(self):
-        article_prob_dist = self.classifier.prob_classify(self.article)
+    def _whole_doc_sentiment(self, article):
+        article_prob_dist = self.classifier.prob_classify(article)
         prediction = article_prob_dist.max()
         pred_prob = article_prob_dist.prob(prediction)
 
         return prediction, pred_prob
 
-    def _sentiment_per_sentence(self, topic_dict):
+    def _sentiment_per_sentence(self, topic_dict, blob):
         sentiments_dict = defaultdict(lambda : defaultdict(list))
         for k, v in topic_dict.iteritems():
-            for sentence in self.blob.sentences:
+            for sentence in blob.sentences:
                 sent_set = set(sentence.split())
                 if len(v.intersection(sent_set)) > 2: #2 is an arbitrary number
                     sent_dist = self.classifier.prob_classify(sentence)
@@ -64,15 +67,16 @@ class TextSentimentAnalysis(object):
             message += " ".join([feature_names[i] for i in topic.argsort()[:-n_top_words - 1:-1]])
             print(message)
 
-    def find_article_sentiment(self, vectorized_tokens, vectorizer):
+    def find_article_sentiment(self, article, vectorized_tokens, vectorizer):
+        blob = self._create_blob(article)
         art_pred, art_prob = self._whole_doc_sentiment()
         topic_dict = self._lda_dim_reduction(vectorized_tokens, vectorizer)
-        sentiments_dict = self._sentiment_per_sentence(topic_dict)
+        sentiments_dict = self._sentiment_per_sentence(topic_dict, blob)
 
         return art_pred, sentiments_dict
 
     #--------- TODO: NEED TO COMPLETE FUNCTIONS BELOW THIS LINE ------------
-    def corpus_analytics(self, processor, db_name, coll_name, uri = None):
+    def corpus_analytics(self, db_name, coll_name, uri = None):
         coll = self._launch_mongo(db_name, coll_name, uri)
         count = 0
         print 'Analyzing Articles and Storing in Mongo'
@@ -81,18 +85,20 @@ class TextSentimentAnalysis(object):
             print 'Pass #{}'.format(count)
             doc_id = doc['_id']
             article = doc['article']
-            cleaned = processor._correct_sentences(article)
-            vectorizer, vectorized_tokens = processor.generate_vectors(cleaned, lemmatize = False)
-            art_pred, sentiments_dict = self.find_article_sentiment(vectorized_tokens, vectorizer)
+            cleaned = self.processor._correct_sentences(article)
+            vectorizer, vectorized_tokens = self.processor.generate_vectors(cleaned, lemmatize = False)
+            art_pred, sentiments_dict = self.find_article_sentiment(cleaned, vectorized_tokens, vectorizer)
             coll.find_one_and_update({'_id':doc_id}, {'$set':{'sentiment':sentiments_dict}})
         print 'COMPLETE'
 
-    def cluster_by_topic_similarity(self, processor, db_name, coll_name, uri = None):
+    def cluster_by_topic_similarity(self, db_name, coll_name, uri = None):
         coll = self._launch_mongo(db_name, coll_name, uri)
         topics_list = []
         for doc in coll.find():
-            topics_list.extend(doc['sentiments_dict']['topic_features'])
-        vectorized = processor._vectorize(topics_list)
+            doc_id = doc['_id']
+            for k, v in doc['sentiments_dict'].iteritems():
+                topics_list.append(v)
+        vectorized = self.processor._vectorize(topics_list)
         # TODO: make clusters kmeans, Heirarchical clustering? set by min cluster size?
 
 
@@ -101,11 +107,21 @@ class TextSentimentAnalysis(object):
 
 
 if __name__ == '__main__':
+    db_name = 'news_articles'
+    coll_name = 'article_text_data'
+    uri = 'mongodb://root:TWV7Y1t7hS7P@localhost'
     prep = TextPreprocessor()
+    prep.db_pipeline(db_name, coll_name, uri)
+    filepath = '/home/bitnami/naivebayesclassifier.pkl'
+    sentiment_analyzer = TextSentimentAnalysis(filepath, prep)
+    sentiment_analyzer.corpus_analytics(db_name, coll_name, uri)
+
+
+
     article_text = prep.new_article('https://www.washingtonpost.com/local/virginia-politics/reeks-of-subtle-racism-tensions-after-black-candidate-left-off-fliers-in-virginia/2017/10/18/de74c47a-b425-11e7-a908-a3470754bbb9_story.html?utm_term=.2e8be491c0a3')
     vectorizer, vectorized_tokens = prep.generate_vectors(article_text, lemmatize = False)
-    filepath = '/Users/npng/galvanize/dsi/news_article_sentiment_analysis/naivebayesclassifier.pkl'
-    sentiment_analyzer = TextSentimentAnalysis(article_text, filepath, 'test_db', 'test_coll')
+
+    sentiment_analyzer = TextSentimentAnalysis(filepath)
     topics_dict = sentiment_analyzer._lda_dim_reduction(vectorized_tokens, vectorizer)
 
     article_pred, sentiments_dict = sentiment_analyzer.find_article_sentiment(vectorized_tokens, vectorizer)

@@ -8,9 +8,11 @@ from bs4 import BeautifulSoup
 
 class TextPreprocessor(object):
 
-    def __init__(self, stop_words = 'en', tfidf = True):
+    def __init__(self, stop_words = 'en', tfidf = True, lemmatize = False):
         self.stop_words = get_stop_words(stop_words)
         self.tfidf = tfidf
+        self.lemmatize = lemmatize
+        self.vectorizer = None
 
     def _launch_mongo(self, db_name, coll_name, uri):
         mc = pymongo.MongoClient(uri)
@@ -49,14 +51,9 @@ class TextPreprocessor(object):
         return lemmed
 
     def _vectorize(self, tokens):
-        if self.tfidf:
-            vectorizer = TfidfVectorizer()
-            vectorized = self.vectorizer.fit_transform(tokens)
-        else:
-            vectorizer = CountVectorizer()
-            vectorized = self.vectorizer.fit_transform(tokens)
+        vectorized = self.vectorizer.transform(tokens)
 
-        return vectorizer, vectorized
+        return vectorized
 
     # ----------- private methods above this line -----------
 
@@ -71,30 +68,40 @@ class TextPreprocessor(object):
         clean = self._correct_sentences(article)
         return clean
 
-    def generate_vectors(self, article, lemmatize = False):
+    def generate_vectors(self, article):
         encoded_tokens = self._tokenize_encode_ascii(article)
         stopped_tokens = self._remove_stop_words(encoded_tokens)
-        if lemmatize:
+        if self.lemmatize:
             lemmed_tokens = self._lemmatize(stopped_tokens)
-            vectorizer, vectorized_tokens = self._vectorize(lemmed_tokens)
+            vectorized_tokens = self._vectorize(lemmed_tokens)
         else:
-            vectorizer, vectorized_tokens = self._vectorize(stopped_tokens)
+            vectorized_tokens = self._vectorize(stopped_tokens)
 
-        return vectorizer, vectorized_tokens
+        return self.vectorizer, vectorized_tokens
 
-# #THIS I THINK WILL BE COMPLETED MUCH LATER NEEDS TO RUN ON ENTIRE CORPUS
-#     def db_pipeline(self, db_name, coll_name, uri = None):
-#         coll = self._launch_mongo(db_name, coll_name, uri)
-#         for article in coll.find_all('article'):
-#             cleaned = self._correct_sentences(article)
-#             vectorizer, vectorized_tokens = generate_vectors(cleaned)
-#             #TODO: Use this to clean and vectorized all the data definitely connect to mongo for this
-#             #NOTE: could this connect to mongo and then just pass back the vectorizer and vectorized tokens
-#             #      this could then be called douwn by mk1 sentiment analyzer and used for clustering
+    def db_pipeline(self, db_name, coll_name, uri = None):
+        coll = self._launch_mongo(db_name, coll_name, uri)
+        all_docs = []
+        for doc in coll.find():
+            cleaned = self._correct_sentences(article)
+            encoded_tokens = self._tokenize_encode_ascii(cleaned)
+            stopped_tokens = self._remove_stop_words(encoded_tokens)
+            if self.lemmatize:
+                lemmed_tokens = self._lemmatize(stopped)
+                all_docs.append(lemmed_tokens)
+            else:
+                all_docs.append(stopped_tokens)
+
+        if self.tfidf:
+            self.vectorizer = TfidfVectorizer().fit(all_docs)
+        else:
+            self.vectorizer = CountVectorizer.fit(all_docs)
+
 
 
 if __name__ == "__main__":
     preprocessor = TextPreprocessor()
+    preprocessor.db_pipeline('test_db', 'test_coll')
     article_text = preprocessor.new_article('https://www.washingtonpost.com/local/virginia-politics/reeks-of-subtle-racism-tensions-after-black-candidate-left-off-fliers-in-virginia/2017/10/18/de74c47a-b425-11e7-a908-a3470754bbb9_story.html?utm_term=.2e8be491c0a3')
-    vectorizer, vectorized_tokens = preprocessor.generate_vectors(article_text, lemmatize = True)
-    nolemvectorizer, nolem_tokens = preprocessor.generate_vectors(article_text, lemmatize = False)
+    vectorizer, vectorized_tokens = preprocessor.generate_vectors(article_text)
+    nolem_vectorizer, nolem_tokens = preprocessor.generate_vectors(article_text)

@@ -1,6 +1,5 @@
 from preprocessor_mk1 import TextPreprocessor
 from textblob import TextBlob
-from textblob.sentiments import NaiveBayesAnalyzer
 from textblob.classifiers import NaiveBayesClassifier
 from sklearn.decomposition import LatentDirichletAllocation
 from collections import defaultdict
@@ -9,12 +8,19 @@ import pymongo
 
 class TextSentimentAnalysis(object):
 
-    def __init__(self, article, classifier_filepath, mongo_uri = None):
+    def __init__(self, article, classifier_filepath, db_name, coll_name, mongo_uri = None):
         self.article = article
         with open(classifier_filepath, 'rb') as f:
             self.classifier = pickle.load(f)
         self.blob = TextBlob(self.article, classifier = self.classifier)
-        self.uri = mongo_uri
+        self.uri = mongo_uri  #EC2: db_name = news_articles, coll_name = article_text_data
+        self.coll = self._launch_mongo(db_name, coll_name)
+
+    def _launch_mongo(self, db_name, coll_name):
+        mc = pymongo.MongoClient(self.uri)
+        db = mc[db_name]
+        coll = db[coll_name]
+        return coll
 
     def _return_top_words(self, model, feature_names, n_top_words = 50):
         topic_dict = {}
@@ -67,19 +73,23 @@ class TextSentimentAnalysis(object):
 
         return art_pred, sentiments_dict
 
-    def corpus_analytics(self, db_name, coll_name, processor): #EC2: db_name = news_articles, coll_name = article_text_data
-        mc = pymongo.MongoClient(self.uri)
-        db = mc[db_name]
-        coll = db[coll_name]
-
-        for item in collection:
-            url = item['url']
-            article = item['article']
+    #--------- TODO: NEED TO COMPLETE FUNCTIONS BELOW THIS LINE ------------
+    def corpus_analytics(self, processor):
+        for doc in self.coll.find_all():
+            url = doc['url']
+            article = doc['article']
             vectorizer, vectorized_tokens = processor.generate_vectors(article, lemmatize = False)
             art_pred, sentiments_dict = self.find_article_sentiment(vectorized_tokens, vectorizer)
+            # TODO: write to collection --> sentiments_dict in some way
 
-    def cluster_by_topic_similarity(self):
-        pass
+    def cluster_by_topic_similarity(self, processor):
+        topics_list = []
+        for doc in self.coll.find_all():
+            topics_list.extend(doc['sentiments_dict']['topic_features'])
+        vectorized = processor._vectorize(topics_list)
+        # TODO: make clusters kmeans? set by min cluster size?
+
+
 
 
 

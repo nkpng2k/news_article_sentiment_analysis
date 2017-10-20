@@ -82,15 +82,15 @@ class TextPreprocessor(object):
 
         return vectorizer, vectorized_tokens
 
-#THIS I THINK WILL BE COMPLETED MUCH LATER NEEDS TO RUN ON ENTIRE CORPUS
-    def db_pipeline(self, db_name, coll_name, uri = None):
-        coll = self._launch_mongo(db_name, coll_name, uri)
-        for article in coll.find_all('article'):
-            cleaned = self._correct_sentences(article)
-            vectorizer, vectorized_tokens = generate_vectors(cleaned)
-            #TODO: Use this to clean and vectorized all the data definitely connect to mongo for this
-            #NOTE: could this connect to mongo and then just pass back the vectorizer and vectorized tokens
-            #      this could then be called douwn by mk1 sentiment analyzer and used for clustering
+# #THIS I THINK WILL BE COMPLETED MUCH LATER NEEDS TO RUN ON ENTIRE CORPUS
+#     def db_pipeline(self, db_name, coll_name, uri = None):
+#         coll = self._launch_mongo(db_name, coll_name, uri)
+#         for article in coll.find_all('article'):
+#             cleaned = self._correct_sentences(article)
+#             vectorizer, vectorized_tokens = generate_vectors(cleaned)
+#             #TODO: Use this to clean and vectorized all the data definitely connect to mongo for this
+#             #NOTE: could this connect to mongo and then just pass back the vectorizer and vectorized tokens
+#             #      this could then be called douwn by mk1 sentiment analyzer and used for clustering
 
 
 if __name__ == "__main__":

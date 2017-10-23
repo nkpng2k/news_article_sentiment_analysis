@@ -3,16 +3,20 @@ from textblob import TextBlob
 from textblob.classifiers import NaiveBayesClassifier
 from sklearn.decomposition import LatentDirichletAllocation
 from collections import defaultdict
+from sklearn.cluster import DBSCAN
 import scipy.cluster.hierarchy as hac
+import matplotlib.pyplot as plt
 import pickle
 import pymongo
+import numpy as np
 
 class TextSentimentAnalysis(object):
 
-    def __init__(self, classifier_filepath, processor):
+    def __init__(self, classifier_filepath, processor_filepath):
         with open(classifier_filepath, 'rb') as f:
             self.classifier = pickle.load(f)
-        self.processor = processor
+        with open(classifier_filepath, 'rb') as f:
+            self.processor = pickle.load(f)
 
     def _launch_mongo(self, db_name, coll_name, uri = None):
         mc = pymongo.MongoClient(uri)
@@ -62,12 +66,6 @@ class TextSentimentAnalysis(object):
 
     # --------- All private methods above this line -------
 
-    def print_top_words(self, model, feature_names, n_top_words):
-        for topic_idx, topic in enumerate(model.components_):
-            message = "Topic #{}: ".format(topic_idx)
-            message += " ".join([feature_names[i] for i in topic.argsort()[:-n_top_words - 1:-1]])
-            print(message)
-
     def find_article_sentiment(self, article, vectorized_tokens, vectorizer):
         blob = self._create_blob(article)
         art_pred, art_prob = self._whole_doc_sentiment(article)
@@ -76,13 +74,12 @@ class TextSentimentAnalysis(object):
 
         return art_pred, sentiments_dict
 
-    #--------- TODO: NEED TO COMPLETE FUNCTIONS BELOW THIS LINE ------------
     def corpus_analytics(self, db_name, coll_name, uri = None):
         coll = self._launch_mongo(db_name, coll_name, uri)
         count = 0
         error_count = 0
         print 'Analyzing Articles and Storing in Mongo'
-        for doc in coll.find(snapshot = True):
+        for doc in coll.find(snapshot = True).batch_size(25):
             try:
                 doc_id = doc['_id']
                 article = doc['article']
@@ -95,27 +92,46 @@ class TextSentimentAnalysis(object):
             except TypeError:
                 error_count += 1
                 print 'ERROR, MOVING ON #{}'.format(error_count)
+            except ValueError:
+                error_count += 1
+                print doc['article']
+                print 'ValueError, Moving On #{}'.format(error_count)
         print 'COMPLETE'
+
+    #--------- TODO: NEED TO COMPLETE FUNCTIONS BELOW THIS LINE ------------
+    #NOTE: use mongodb .limit(n) command to take smaller subset of data
 
     def cluster_by_topic_similarity(self, db_name, coll_name, uri = None):
         coll = self._launch_mongo(db_name, coll_name, uri)
         count = 0
         error_count = 0
         topics_list = []
-        for doc in coll.find():
+        for doc in coll.find().batch_size(25).limit(100):
             try:
-                count += 1
-                print "Pass #{}".format(count)
                 doc_id = doc['_id']
                 for k, v in doc['sentiment'].iteritems():
                     topics_list.append(v)
+                count += 1
+                print "Pass #{}".format(count)
             except:
                 error_count += 1
                 print "ERROR, MOVING ON #{}".format(error_count)
 
         vectorized = self.processor._vectorize(topics_list)
-        h_cluster = hac.linkage(vectorized, metric = 'cosine', method = 'centroids')
-        # TODO: make clusters kmeans, Heirarchical clustering? set by min cluster size?
+        dbscan = DBSCAN(min_samples = 50, metric = 'cosine', n_jobs = -1)
+        dbscan.fit(vectorized)
+        # link_matrix = hac.linkage(vectorized, metric = 'cosine', method = 'centroids')
+        # h_cluster = hac.fcluster(link_matrix, threshold = 0.1, 'distance')
+        # plt.figure()
+        # dn = hac.dendrogram(z)
+        return dbscan
+
+    def predict_on_new_article(self, url):
+        article = self.processor.new_article(url)
+        vectorized = self.processor.generate_vectors(article)
+        prediction = dbscan.fit_predict(vectorized)
+
+        return prediction
 
 
 
@@ -126,8 +142,9 @@ if __name__ == '__main__':
     db_name = 'test_articles'
     coll_name = 'article_text_data'
     uri = 'mongodb://root:9EThDhBJiBGP@localhost'
-    prep = TextPreprocessor()
-    prep.db_pipeline(db_name, coll_name, uri)
-    filepath = '/home/bitnami/naivebayesclassifier.pkl'
-    sentiment_analyzer = TextSentimentAnalysis(filepath, prep)
+    processor_filepath = '/home/bitnami/processor.pkl'
+    classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
+    sentiment_analyzer = TextSentimentAnalysis(classifier_filepath, processor_filepath)
     sentiment_analyzer.corpus_analytics(db_name, coll_name, uri)
+    dbscan = sentiment_analyzer.cluster_by_topic_similarity(db_name, coll_name, uri)
+    print np.unique(dbscan.labels_, return_counts = True)

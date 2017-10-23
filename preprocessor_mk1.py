@@ -2,6 +2,7 @@ import requests
 import re
 import pymongo
 import string
+import pickle
 from stop_words import get_stop_words
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from nltk.stem.wordnet import WordNetLemmatizer
@@ -101,7 +102,7 @@ class TextPreprocessor(object):
         all_docs = []
         error_counter = 0
         success = 0
-        for doc in coll.find(snapshot = True):
+        for doc in coll.find(snapshot = True).batch_size(25):
             try:
                 cleaned = self._correct_sentences(doc['article'])
                 cleaned_tokens = self._tokenize(cleaned)
@@ -130,8 +131,12 @@ class TextPreprocessor(object):
 
 
 if __name__ == "__main__":
-    preprocessor = TextPreprocessor()
-    preprocessor.db_pipeline('test_db', 'test_coll')
-    article_text = preprocessor.new_article('https://www.washingtonpost.com/local/virginia-politics/reeks-of-subtle-racism-tensions-after-black-candidate-left-off-fliers-in-virginia/2017/10/18/de74c47a-b425-11e7-a908-a3470754bbb9_story.html?utm_term=.2e8be491c0a3')
-    vectorizer, vectorized_tokens = preprocessor.generate_vectors(article_text)
-    nolem_vectorizer, nolem_tokens = preprocessor.generate_vectors(article_text)
+        db_name = 'test_articles'
+        coll_name = 'article_text_data'
+        uri = 'mongodb://root:9EThDhBJiBGP@localhost'
+        processor_filepath = '/home/bitnami/processor.pkl'
+        classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
+        prep = TextPreprocessor()
+        prep.db_pipeline(db_name, coll_name, uri)
+        with open(processor_filepath, 'wb') as f:
+            pickle.dump(prep, f)

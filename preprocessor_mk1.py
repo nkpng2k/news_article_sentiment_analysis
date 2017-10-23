@@ -1,6 +1,7 @@
 import requests
 import re
 import pymongo
+import string
 from stop_words import get_stop_words
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from nltk.stem.wordnet import WordNetLemmatizer
@@ -32,13 +33,18 @@ class TextPreprocessor(object):
         add_spaces = re.sub(r'(?<=[.!?])(?=[^\s])', r' \n', text)
         return add_spaces
 
-    def _tokenize_encode_ascii(self, article):
-        encoded = [] #this tokenizes the data
-        for word in article.split():
-            encoded.append(word.encode('ascii', 'ignore').lower())
+    def _encode_ascii(self, tokens):
+        encoded = []
+        for word in tokens:
+            encoded.append(word.encode('ascii', 'ignore'))
         return encoded
 
-    def _remove_stop_words(self, tokens):
+    def _remove_stop_words(self, article):
+        tokens = []
+        for word in article.split():
+            word = word.lower()
+            word = word.strip(string.punctuation)
+            tokens.append(word)
         stopped_tokens = [tok for tok in tokens if tok not in self.stop_words]
         return stopped_tokens
 
@@ -55,6 +61,18 @@ class TextPreprocessor(object):
 
         return vectorized
 
+    def _gen_corpus(self, docs_tokens):
+        for doc in docs_tokens:
+            yield doc
+
+    def _tokenize(self, article):
+        stopped_tokens = self._remove_stop_words(article)
+        encoded_tokens = self._encode_ascii(stopped_tokens)
+        no_just_punc_tokens = [tok for tok in encoded_tokens if tok not in string.punctuation]
+
+        return no_just_punc_tokens
+
+
     # ----------- private methods above this line -----------
 
     def new_article(self, url):
@@ -69,33 +87,45 @@ class TextPreprocessor(object):
         return clean
 
     def generate_vectors(self, article):
-        encoded_tokens = self._tokenize_encode_ascii(article)
-        stopped_tokens = self._remove_stop_words(encoded_tokens)
+        cleaned_tokens = self._tokenize(article)
         if self.lemmatize:
-            lemmed_tokens = self._lemmatize(stopped_tokens)
+            lemmed_tokens = self._lemmatize(cleaned_tokens)
             vectorized_tokens = self._vectorize(lemmed_tokens)
         else:
-            vectorized_tokens = self._vectorize(stopped_tokens)
+            vectorized_tokens = self._vectorize(cleaned_tokens)
 
         return self.vectorizer, vectorized_tokens
 
     def db_pipeline(self, db_name, coll_name, uri = None):
         coll = self._launch_mongo(db_name, coll_name, uri)
         all_docs = []
-        for doc in coll.find():
-            cleaned = self._correct_sentences(article)
-            encoded_tokens = self._tokenize_encode_ascii(cleaned)
-            stopped_tokens = self._remove_stop_words(encoded_tokens)
-            if self.lemmatize:
-                lemmed_tokens = self._lemmatize(stopped)
-                all_docs.append(lemmed_tokens)
-            else:
-                all_docs.append(stopped_tokens)
+        error_counter = 0
+        success = 0
+        for doc in coll.find(snapshot = True):
+            try:
+                cleaned = self._correct_sentences(doc['article'])
+                cleaned_tokens = self._tokenize(cleaned)
+                if self.lemmatize:
+                    lemmed_tokens = self._lemmatize(cleaned_tokens)
+                    all_docs.append(lemmed_tokens)
+                else:
+                    all_docs.append(cleaned_tokens)
+                success += 1
+                print 'Success # {}'.format(success)
+            except TypeError:
+                error_counter += 1
+                print 'TypeError, Moving On. Error #{}'.format(error_counter)
+
+        corpus = self._gen_corpus(all_docs)
 
         if self.tfidf:
-            self.vectorizer = TfidfVectorizer().fit(all_docs)
+            self.vectorizer = TfidfVectorizer(preprocessor = lambda x: x,
+                                              tokenizer = lambda x: x, min_df = 0.1).fit(corpus)
         else:
-            self.vectorizer = CountVectorizer.fit(all_docs)
+            self.vectorizer = CountVectorizer(preprocessor = lambda x: x,
+                                              tokenizer = lambda x: x, min_df = 0.1).fit(corpus)
+
+        print "success TFIDF Vectorizer has been trained"
 
 
 

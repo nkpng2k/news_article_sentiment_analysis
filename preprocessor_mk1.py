@@ -105,8 +105,7 @@ class TextPreprocessor(object):
     def db_pipeline(self, processor_filepath, db_name, coll_name, uri = None):
         coll = self._launch_mongo(db_name, coll_name, uri)
         all_docs = []
-        error_counter = 0
-        success = 0
+        error_counter, success = 0, 0
         for doc in coll.find(snapshot = True).batch_size(25):
             try:
                 cleaned = self._correct_sentences(doc['article'])

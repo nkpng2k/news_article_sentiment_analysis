@@ -4,19 +4,22 @@ from textblob.classifiers import NaiveBayesClassifier
 from sklearn.decomposition import LatentDirichletAllocation
 from collections import defaultdict
 from sklearn.cluster import DBSCAN
+from sklearn.metrics.pairwise import cosine_similarity
+import outside_functions as of
 import scipy.cluster.hierarchy as hac
 import matplotlib.pyplot as plt
 import pickle
 import pymongo
 import numpy as np
+import time
 
 class TextSentimentAnalysis(object):
 
-    def __init__(self, classifier_filepath, processor_filepath):
+    def __init__(self, classifier_filepath, processor):
         with open(classifier_filepath, 'rb') as f:
             self.classifier = pickle.load(f)
-        with open(classifier_filepath, 'rb') as f:
-            self.processor = pickle.load(f)
+        self.processor = processor
+        print 'all dependencies loaded'
 
     def _launch_mongo(self, db_name, coll_name, uri = None):
         mc = pymongo.MongoClient(uri)
@@ -64,6 +67,20 @@ class TextSentimentAnalysis(object):
 
         return topic_dict
 
+    def _matrix_svd(self, matrix, power_level=0.9):
+        if power_level>1:
+            print "No. Power level can't be more than 1"
+            power_level=0.9
+        #decompose matrix into U,S,V components
+        U,Sigma,VT = np.linalg.svd(matrix)
+        #shrink matrix to latent features that account for power_level fraction of total power
+        power = Sigma**2
+        passed_thresh = np.argwhere(np.cumsum(power)/np.sum(power) >= power_level)
+        U_trunc = U[:, :passed_thresh[0][0]]
+        Sigma_trunc = Sigma[:passed_thresh[0][0]]
+        VT_trunc = VT[:, :passed_thresh[0][0]]
+        return U_trunc, Sigma_trunc, VT_trunc
+
     # --------- All private methods above this line -------
 
     def find_article_sentiment(self, article, vectorized_tokens, vectorizer):
@@ -83,6 +100,7 @@ class TextSentimentAnalysis(object):
             try:
                 doc_id = doc['_id']
                 article = doc['article']
+                print doc_id, article[:100]
                 cleaned = self.processor._correct_sentences(article)
                 vectorizer, vectorized_tokens = self.processor.generate_vectors(cleaned)
                 art_pred, sentiments_dict = self.find_article_sentiment(cleaned, vectorized_tokens, vectorizer)
@@ -101,30 +119,29 @@ class TextSentimentAnalysis(object):
     #--------- TODO: NEED TO COMPLETE FUNCTIONS BELOW THIS LINE ------------
     #NOTE: use mongodb .limit(n) command to take smaller subset of data
 
-    def cluster_by_topic_similarity(self, db_name, coll_name, uri = None):
+    def cluster_by_topic_similarity(self, db_name, coll_name, uri = None, power_level = 0.9):
         coll = self._launch_mongo(db_name, coll_name, uri)
         count = 0
         error_count = 0
         topics_list = []
-        for doc in coll.find().batch_size(25).limit(100):
+        for doc in coll.find(snapshot = True).batch_size(25).limit(5000):
             try:
                 doc_id = doc['_id']
                 for k, v in doc['sentiment'].iteritems():
-                    topics_list.append(v)
+                    topics_list.append(v['topic_features'])
                 count += 1
                 print "Pass #{}".format(count)
             except:
                 error_count += 1
                 print "ERROR, MOVING ON #{}".format(error_count)
 
-        vectorized = self.processor._vectorize(topics_list)
-        dbscan = DBSCAN(min_samples = 50, metric = 'cosine', n_jobs = -1)
-        dbscan.fit(vectorized)
-        # link_matrix = hac.linkage(vectorized, metric = 'cosine', method = 'centroids')
-        # h_cluster = hac.fcluster(link_matrix, threshold = 0.1, 'distance')
-        # plt.figure()
-        # dn = hac.dendrogram(z)
-        return dbscan
+        vectorized = self.processor._vectorize(topics_list).toarray()
+        u, sigma, vt = self._matrix_svd(vectorized, power_level)
+        # dist = 1 - cosine_similarity(vectorized)
+        link_matrix = hac.linkage(u, metric = 'cosine', method = 'average')
+        h_cluster = hac.fcluster(link_matrix, t = 0.05, criterion = 'distance')
+        dbscan = DBSCAN(min_samples = 5, metric = 'cosine', n_jobs = -1).fit(u)
+        return vectorized, h_cluster, dbscan
 
     def predict_on_new_article(self, url):
         article = self.processor.new_article(url)
@@ -135,16 +152,15 @@ class TextSentimentAnalysis(object):
 
 
 
-
-
-
 if __name__ == '__main__':
     db_name = 'test_articles'
     coll_name = 'article_text_data'
     uri = 'mongodb://root:9EThDhBJiBGP@localhost'
     processor_filepath = '/home/bitnami/processor.pkl'
     classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
-    sentiment_analyzer = TextSentimentAnalysis(classifier_filepath, processor_filepath)
-    sentiment_analyzer.corpus_analytics(db_name, coll_name, uri)
-    dbscan = sentiment_analyzer.cluster_by_topic_similarity(db_name, coll_name, uri)
+    prep = TextPreprocessor(vectorizer = processor_filepath)
+    sentiment_analyzer = TextSentimentAnalysis(classifier_filepath, prep)
+    # sentiment_analyzer.corpus_analytics(db_name, coll_name, uri)
+    vect_matrix, h_cluster, dbscan = sentiment_analyzer.cluster_by_topic_similarity(db_name, coll_name, uri)
+    print np.unique(np.array(h_cluster), return_counts = True)
     print np.unique(dbscan.labels_, return_counts = True)

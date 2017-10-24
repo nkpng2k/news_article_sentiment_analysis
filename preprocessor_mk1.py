@@ -3,6 +3,7 @@ import re
 import pymongo
 import string
 import pickle
+import outside_functions as of
 from stop_words import get_stop_words
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from nltk.stem.wordnet import WordNetLemmatizer
@@ -10,11 +11,16 @@ from bs4 import BeautifulSoup
 
 class TextPreprocessor(object):
 
-    def __init__(self, stop_words = 'en', tfidf = True, lemmatize = False):
+    def __init__(self, stop_words = 'en', tfidf = True, lemmatize = False, vectorizer = None):
         self.stop_words = get_stop_words(stop_words)
         self.tfidf = tfidf
         self.lemmatize = lemmatize
-        self.vectorizer = None
+        if vectorizer != None:
+            with open(vectorizer, 'rb') as f:
+                self.vectorizer = pickle.load(f)
+            print "loaded pickled vectorizer"
+        else:
+            self.vectorizer = vectorizer
 
     def _launch_mongo(self, db_name, coll_name, uri):
         mc = pymongo.MongoClient(uri)
@@ -73,7 +79,6 @@ class TextPreprocessor(object):
 
         return no_just_punc_tokens
 
-
     # ----------- private methods above this line -----------
 
     def new_article(self, url):
@@ -97,7 +102,7 @@ class TextPreprocessor(object):
 
         return self.vectorizer, vectorized_tokens
 
-    def db_pipeline(self, db_name, coll_name, uri = None):
+    def db_pipeline(self, processor_filepath, db_name, coll_name, uri = None):
         coll = self._launch_mongo(db_name, coll_name, uri)
         all_docs = []
         error_counter = 0
@@ -120,15 +125,16 @@ class TextPreprocessor(object):
         corpus = self._gen_corpus(all_docs)
 
         if self.tfidf:
-            self.vectorizer = TfidfVectorizer(preprocessor = lambda x: x,
-                                              tokenizer = lambda x: x, min_df = 0.1).fit(corpus)
+            self.vectorizer = TfidfVectorizer(preprocessor = of.tfidf_lambda,
+                                              tokenizer = of.tfidf_lambda, min_df = 0.1).fit(corpus)
         else:
-            self.vectorizer = CountVectorizer(preprocessor = lambda x: x,
-                                              tokenizer = lambda x: x, min_df = 0.1).fit(corpus)
+            self.vectorizer = CountVectorizer(preprocessor = of.tfidf_lambda,
+                                              tokenizer = of.tfidf_lambda, min_df = 0.1).fit(corpus)
+
+        with open(processor_filepath, 'wb') as f:
+            pickle.dump(self.vectorizer, f)
 
         print "success TFIDF Vectorizer has been trained"
-
-
 
 if __name__ == "__main__":
         db_name = 'test_articles'
@@ -137,6 +143,4 @@ if __name__ == "__main__":
         processor_filepath = '/home/bitnami/processor.pkl'
         classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
         prep = TextPreprocessor()
-        prep.db_pipeline(db_name, coll_name, uri)
-        with open(processor_filepath, 'wb') as f:
-            pickle.dump(prep, f)
+        prep.db_pipeline(processor_filepath, db_name, coll_name, uri)

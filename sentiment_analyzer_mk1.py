@@ -1,7 +1,8 @@
 from preprocessor_mk1 import TextPreprocessor
 from textblob import TextBlob
 from textblob.classifiers import NaiveBayesClassifier
-from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.decomposition import LatentDirichletAllocation, TruncatedSVD
+from scipy.sparse.linalg import svds
 from collections import defaultdict
 from sklearn.cluster import DBSCAN
 from sklearn.metrics.pairwise import cosine_similarity
@@ -20,7 +21,6 @@ class TextSentimentAnalysis(object):
         self.processor = processor
         self.n_h_clusters = None
         self.n_dbscan_cluster = None
-        self.power_level = None
         print 'all dependencies loaded'
 
     def _launch_mongo(self, db_name, coll_name, uri = None):
@@ -70,18 +70,11 @@ class TextSentimentAnalysis(object):
         return topic_dict
 
     def _matrix_svd(self, matrix):
-        if self.power_level>1:
-            print "No. Power level can't be more than 1"
-            self.power_level=0.9
-        #decompose matrix into U,S,V components
-        U, Sigma, VT = np.linalg.svd(matrix)
-        #shrink matrix to latent features that account for power_level fraction of total power
-        power = Sigma**2
-        passed_thresh = np.argwhere(np.cumsum(power)/np.sum(power) >= self.power_level)
-        U_trunc = U[:, :passed_thresh[0][0]] #rows: articles, columns: latent features
-        Sigma_trunc = Sigma[:passed_thresh[0][0]]
-        VT_trunc = VT[:, :passed_thresh[0][0]] #rows: features, columns: latent articles
-        return U_trunc, Sigma_trunc, VT_trunc
+        u, s, vt = svds(matrix, k = 100)
+        tsvd = TruncatedSVD(n_components = 100, n_iter = 50).fit(matrix)
+        skl_u = tsvd.transform(matrix)
+        print tsvd.explained_variance_ratio_.sum()
+        return u, skl_u
 
     def _find_article_sentiment(self, article, vectorized_tokens, vectorizer):
         blob = self._create_blob(article)
@@ -93,16 +86,16 @@ class TextSentimentAnalysis(object):
 
     def _train_clusters(self, topics_list):
         vectorized = self.processor._vectorize(topics_list).toarray()
-        u, sigma, vt = self._matrix_svd(vectorized)
-        link_matrix = hac.linkage(u, metric = 'cosine', method = 'average')
+        u, skl_u = self._matrix_svd(vectorized)
+        dist = 1 - cosine_similarity(skl_u)
+        link_matrix = hac.linkage(dist, metric = 'cosine', method = 'average')
         h_cluster = hac.fcluster(link_matrix, t = 0.05, criterion = 'distance')
-
-        dbscan = DBSCAN(min_samples = 5, metric = 'cosine', n_jobs = -1).fit(u)
+        dbscan = DBSCAN(min_samples = 10, metric = 'cosine', n_jobs = -1).fit(skl_u)
 
         self.n_h_clusters = len(np.unique(np.array(h_cluster)))
         self.n_dbscan_cluster = len(np.unique(dbscan.labels_))
 
-        return u, h_cluster, dbscan
+        return skl_u, h_cluster, dbscan
 
     # --------- All private methods above this line -------
 
@@ -130,9 +123,8 @@ class TextSentimentAnalysis(object):
 
     #--------- TODO: NEED TO COMPLETE FUNCTIONS BELOW THIS LINE ------------
 
-    def cluster_by_topic_similarity(self, db_name, coll_name, uri = None, power_level = 0.9):
+    def cluster_by_topic_similarity(self, db_name, coll_name, uri = None):
         coll = self._launch_mongo(db_name, coll_name, uri)
-        self.power_level = power_level
         count, error_count = 0, 0
         topics_list = []
         article_ids = []
@@ -170,7 +162,7 @@ if __name__ == '__main__':
     prep = TextPreprocessor(vectorizer = processor_filepath)
     sentiment_analyzer = TextSentimentAnalysis(classifier_filepath, prep)
     # sentiment_analyzer.corpus_analytics(db_name, coll_name, uri)
-    result = sentiment_analyzer.cluster_by_topic_similarity(db_name, coll_name, uri, 0.9)
+    result = sentiment_analyzer.cluster_by_topic_similarity(db_name, coll_name, uri)
     article_ids, svd_matrix, h_cluster, dbscan = result
     print np.unique(np.array(h_cluster), return_counts = True)
     print np.unique(dbscan.labels_, return_counts = True)

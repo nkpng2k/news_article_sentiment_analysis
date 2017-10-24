@@ -2,10 +2,10 @@ from preprocessor_mk1 import TextPreprocessor
 from textblob import TextBlob
 from textblob.classifiers import NaiveBayesClassifier
 from sklearn.decomposition import LatentDirichletAllocation, TruncatedSVD
-from scipy.sparse.linalg import svds
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from collections import defaultdict
-from sklearn.cluster import DBSCAN
 from sklearn.metrics.pairwise import cosine_similarity
+from topic_classifier import pick_classifier
 import outside_functions as of
 import scipy.cluster.hierarchy as hac
 import matplotlib.pyplot as plt
@@ -19,8 +19,12 @@ class TextSentimentAnalysis(object):
         with open(classifier_filepath, 'rb') as f:
             self.classifier = pickle.load(f)
         self.processor = processor
+        self.tsvd = None
+        self.tsvd_cut = None
         self.n_h_clusters = None
-        self.n_dbscan_cluster = None
+        self.exp_var_desired = None
+        self.lda_classifier = None
+        self.classifier = None
         print 'all dependencies loaded'
 
     def _launch_mongo(self, db_name, coll_name, uri = None):
@@ -70,11 +74,16 @@ class TextSentimentAnalysis(object):
         return topic_dict
 
     def _matrix_svd(self, matrix):
-        u, s, vt = svds(matrix, k = 100)
-        tsvd = TruncatedSVD(n_components = 100, n_iter = 50).fit(matrix)
-        skl_u = tsvd.transform(matrix)
-        print tsvd.explained_variance_ratio_.sum()
-        return u, skl_u
+        skl_u = self.tsvd.transform(matrix)
+        skl_u = skl_u[:, :self.tsvd_cut]
+        return skl_u
+
+    def _train_trunc_svd(self, matrix):
+        self.tsvd = TruncatedSVD(n_components = 100, n_iter = 50).fit(matrix)
+        for i in xrange(len(self.tsvd.explained_variance_ratio_)):
+            if self.tsvd.explained_variance_ratio_[:i].sum() > self.exp_var_desired:
+                print i, self.tsvd.explained_variance_ratio_[:i].sum()
+                return i
 
     def _find_article_sentiment(self, article, vectorized_tokens, vectorizer):
         blob = self._create_blob(article)
@@ -86,16 +95,23 @@ class TextSentimentAnalysis(object):
 
     def _train_clusters(self, topics_list):
         vectorized = self.processor._vectorize(topics_list).toarray()
-        u, skl_u = self._matrix_svd(vectorized)
+        self.tsvd_cut = self._train_trunc_svd(vectorized)
+        skl_u = self._matrix_svd(vectorized)
         dist = 1 - cosine_similarity(skl_u)
         link_matrix = hac.linkage(dist, metric = 'cosine', method = 'average')
         h_cluster = hac.fcluster(link_matrix, t = 0.05, criterion = 'distance')
-        dbscan = DBSCAN(min_samples = 10, metric = 'cosine', n_jobs = -1).fit(skl_u)
 
         self.n_h_clusters = len(np.unique(np.array(h_cluster)))
-        self.n_dbscan_cluster = len(np.unique(dbscan.labels_))
 
-        return skl_u, h_cluster, dbscan
+        return vectorized, skl_u, h_cluster
+
+    def _select_best_classifier(self, X_reduced, X_sparse, y):
+        best_estimator, best_params, lda_best_params = pick_classifier(X_reduced, X_sparse, y)
+        self.lda_classifier = LinearDiscriminantAnalysis()
+        self.lda_classifier.set_params(**lda_best_params)
+        self.classifier = best_estimator
+        self.classifier.set_params(**best_params)
+
 
     # --------- All private methods above this line -------
 
@@ -121,14 +137,13 @@ class TextSentimentAnalysis(object):
                 print 'ValueError, Moving On #{}'.format(error_count)
         print 'COMPLETE'
 
-    #--------- TODO: NEED TO COMPLETE FUNCTIONS BELOW THIS LINE ------------
-
-    def cluster_by_topic_similarity(self, db_name, coll_name, uri = None):
+    def cluster_by_topic_similarity(self, db_name, coll_name, uri = None, desired_exp_var = 0.9):
+        self.exp_var_desired = desired_exp_var
         coll = self._launch_mongo(db_name, coll_name, uri)
         count, error_count = 0, 0
         topics_list = []
         article_ids = []
-        for doc in coll.find(snapshot = True).batch_size(25).limit(5000):
+        for doc in coll.find(snapshot = True).batch_size(25).limit(500):
             try:
                 doc_id = doc['_id']
                 for k, v in doc['sentiment'].iteritems():
@@ -140,18 +155,22 @@ class TextSentimentAnalysis(object):
                 error_count += 1
                 print "ERROR, MOVING ON #{}".format(error_count)
 
-        u, h_cluster, dbscan = self._train_clusters(topics_list)
+        vectorized, u, h_cluster = self._train_clusters(topics_list)
 
-        return article_ids, u, h_cluster, dbscan
+        self._select_best_classifier(u, vectorized, h_cluster)
+
+        return article_ids, u, h_cluster
 
     def predict_on_new_article(self, url):
         article = self.processor.new_article(url)
         vectorizer, vectorized = self.processor.generate_vectors(article)
         art_pred, sentiments_dict = self._find_article_sentiment(article, vectorized, vectorizer)
-        u, sigma, vt = self._matrix_svd(vectorized)
-        prediction = dbscan.fit_predict(u)
+        u = self._matrix_svd(vectorized)
+        lda_predict = self.lda_classifier.predict(vectorized)
+        class_predict = self.classifier.predict(u)
 
-        return prediction
+        return lda_predict, class_predict
+
 
 if __name__ == '__main__':
     db_name = 'test_articles'
@@ -163,8 +182,8 @@ if __name__ == '__main__':
     sentiment_analyzer = TextSentimentAnalysis(classifier_filepath, prep)
     # sentiment_analyzer.corpus_analytics(db_name, coll_name, uri)
     result = sentiment_analyzer.cluster_by_topic_similarity(db_name, coll_name, uri)
-    article_ids, svd_matrix, h_cluster, dbscan = result
+    article_ids, svd_matrix, h_cluster= result
     print np.unique(np.array(h_cluster), return_counts = True)
-    print np.unique(dbscan.labels_, return_counts = True)
-    url = ''
-    prediction = sentiment_analyzer.predict_on_new_article(url)
+    url = 'http://www.foxnews.com/politics/2017/10/24/gop-sen-jeff-flake-says-wont-seek-re-election-in-2018.html'
+    lda_predict, prediction = sentiment_analyzer.predict_on_new_article(url)
+    print lda_predict, prediction

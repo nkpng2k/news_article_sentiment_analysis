@@ -17,14 +17,14 @@ class TextSentimentAnalysis(object):
 
     def __init__(self, classifier_filepath, processor):
         with open(classifier_filepath, 'rb') as f:
-            self.classifier = pickle.load(f)
+            self.sentiment_classifier = pickle.load(f)
         self.processor = processor
         self.tsvd = None
         self.tsvd_cut = None
         self.n_h_clusters = None
         self.exp_var_desired = None
         self.lda_classifier = None
-        self.classifier = None
+        self.cluster_classifier = None
         print 'all dependencies loaded'
 
     def _launch_mongo(self, db_name, coll_name, uri = None):
@@ -34,7 +34,7 @@ class TextSentimentAnalysis(object):
         return coll
 
     def _create_blob(self, article):
-        blob = TextBlob(article, classifier = self.classifier)
+        blob = TextBlob(article, classifier = self.sentiment_classifier)
         return blob
 
     def _return_top_words(self, model, feature_names, n_top_words = 50):
@@ -46,7 +46,7 @@ class TextSentimentAnalysis(object):
         return topic_dict
 
     def _whole_doc_sentiment(self, article):
-        article_prob_dist = self.classifier.prob_classify(article)
+        article_prob_dist = self.sentiment_classifier.prob_classify(article)
         prediction = article_prob_dist.max()
         pred_prob = article_prob_dist.prob(prediction)
 
@@ -58,7 +58,7 @@ class TextSentimentAnalysis(object):
             for sentence in blob.sentences:
                 sent_set = set(sentence.split())
                 if len(v.intersection(sent_set)) > 2: #2 is an arbitrary number
-                    sent_dist = self.classifier.prob_classify(sentence)
+                    sent_dist = self.sentiment_classifier.prob_classify(sentence)
                     sent_pred = sent_dist.max()
                     sentiments_dict['topic_{}'.format(k)]['sentences'].append(str(sentence))
                     sentiments_dict['topic_{}'.format(k)]['predictions'].append(sent_pred)
@@ -109,8 +109,10 @@ class TextSentimentAnalysis(object):
         best_estimator, best_params, lda_best_params = pick_classifier(X_reduced, X_sparse, y)
         self.lda_classifier = LinearDiscriminantAnalysis()
         self.lda_classifier.set_params(**lda_best_params)
-        self.classifier = best_estimator
-        self.classifier.set_params(**best_params)
+        self.lda_classifier.fit(X_sparse, y)
+        self.cluster_classifier = best_estimator
+        self.cluster_classifier.set_params(**best_params)
+        self.cluster_classifier.fit(X_reduced, y)
 
 
     # --------- All private methods above this line -------
@@ -165,9 +167,15 @@ class TextSentimentAnalysis(object):
         article = self.processor.new_article(url)
         vectorizer, vectorized = self.processor.generate_vectors(article)
         art_pred, sentiments_dict = self._find_article_sentiment(article, vectorized, vectorizer)
+        topics_list = []
+        article_info = []
+        for k, v in sentiments_dict.iteritems():
+            topics_list.append(v['topic_features'])
+            article_info.append(k)
+        vectorized = self.processor._vectorize(topics_list).toarray()
         u = self._matrix_svd(vectorized)
         lda_predict = self.lda_classifier.predict(vectorized)
-        class_predict = self.classifier.predict(u)
+        class_predict = self.cluster_classifier.predict(u)
 
         return lda_predict, class_predict
 

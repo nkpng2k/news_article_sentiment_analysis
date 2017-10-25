@@ -15,9 +15,11 @@ import numpy as np
 
 class TextSentimentAnalysis(object):
 
-    def __init__(self, classifier_filepath, processor):
+    def __init__(self, classifier_filepath, sentiment_lexicon_path, processor):
         with open(classifier_filepath, 'rb') as f:
             self.sentiment_classifier = pickle.load(f)
+        with open(sentiment_lexicon_path, 'rb') as f:
+            self.sentiment_lexicon = pickle.load(f)
         self.processor = processor
         self.tsvd = None
         self.tsvd_cut = None
@@ -36,6 +38,10 @@ class TextSentimentAnalysis(object):
     def _create_blob(self, article):
         blob = TextBlob(article, classifier = self.sentiment_classifier)
         return blob
+
+    def _simple_sentiment(self, word):
+        sentiment = self.sentiment_lexicon.get(word, 0)
+        return sentiment
 
     def _return_top_words(self, model, feature_names, n_top_words = 50):
         topic_dict = {}
@@ -57,9 +63,13 @@ class TextSentimentAnalysis(object):
         for k, v in topic_dict.iteritems():
             for sentence in blob.sentences:
                 sent_set = set(sentence.split())
-                if len(v.intersection(sent_set)) > 2: #2 is an arbitrary number
-                    sent_dist = self.sentiment_classifier.prob_classify(sentence)
-                    sent_pred = sent_dist.max()
+                if len(v.intersection(sent_set)) > 1: #2 is an arbitrary number
+                    # sent_dist = self.sentiment_classifier.prob_classify(sentence)
+                    # sent_pred = sent_dist.max()
+                    sent_pred = 0
+                    for word in sent_set:
+                        sent_pred += self._simple_sentiment(word)
+                    print sent_pred
                     sentiments_dict['topic_{}'.format(k)]['sentences'].append(str(sentence))
                     sentiments_dict['topic_{}'.format(k)]['predictions'].append(sent_pred)
             sentiments_dict['topic_{}'.format(k)]['topic_features'] = list(v)
@@ -67,7 +77,8 @@ class TextSentimentAnalysis(object):
         return sentiments_dict
 
     def _lda_dim_reduction(self, vectorized_tokens, vectorizer):
-        lda = LatentDirichletAllocation(n_components = 3, learning_method = 'batch').fit(vectorized_tokens)
+        lda = LatentDirichletAllocation(n_components = 3, learning_method = 'batch',
+                                        max_iter = 50).fit(vectorized_tokens)
         feature_names = vectorizer.get_feature_names()
         topic_dict = self._return_top_words(lda, feature_names)
 
@@ -159,14 +170,23 @@ class TextSentimentAnalysis(object):
 
         vectorized, u, h_cluster = self._train_clusters(topics_list)
 
+        for index, article in enumerate(article_ids):
+            doc_id, topic = article
+            coll.find_one_and_update({'_id':doc_id}, {'$set':{'sentiment.'+ topic + '.label': h_cluster[index]}})
+
         self._select_best_classifier(u, vectorized, h_cluster)
 
         return article_ids, u, h_cluster
 
-    def predict_on_new_article(self, url):
+    def predict_on_new_article(self, url, db_name, coll_name, uri = None):
+        coll = self._launch_mongo(db_name, coll_name, uri)
         article = self.processor.new_article(url)
         vectorizer, vectorized = self.processor.generate_vectors(article)
         art_pred, sentiments_dict = self._find_article_sentiment(article, vectorized, vectorizer)
+        try:
+            coll.insert_one({'url':url, 'article':article, 'sentiment':sentiments_dict})
+        except pymongo.errors.DuplicateKeyError:
+            print 'this url already exists I do not need to do anything with it'
         topics_list = []
         article_info = []
         for k, v in sentiments_dict.iteritems():
@@ -186,12 +206,13 @@ if __name__ == '__main__':
     uri = 'mongodb://root:9EThDhBJiBGP@localhost'
     processor_filepath = '/home/bitnami/processor.pkl'
     classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
+    lexicon_filepath = '/home/bitnami/sentiment_lexicon.pkl'
     prep = TextPreprocessor(vectorizer = processor_filepath)
-    sentiment_analyzer = TextSentimentAnalysis(classifier_filepath, prep)
-    # sentiment_analyzer.corpus_analytics(db_name, coll_name, uri)
+    sentiment_analyzer = TextSentimentAnalysis(classifier_filepath, lexicon_filepath, prep)
+    sentiment_analyzer.corpus_analytics(db_name, coll_name, uri)
     result = sentiment_analyzer.cluster_by_topic_similarity(db_name, coll_name, uri)
     article_ids, svd_matrix, h_cluster= result
     print np.unique(np.array(h_cluster), return_counts = True)
     url = 'http://www.foxnews.com/politics/2017/10/24/gop-sen-jeff-flake-says-wont-seek-re-election-in-2018.html'
-    lda_predict, prediction = sentiment_analyzer.predict_on_new_article(url)
+    lda_predict, prediction = sentiment_analyzer.predict_on_new_article(url, db_name, coll_name, uri)
     print lda_predict, prediction

@@ -43,11 +43,13 @@ class TextSentimentAnalysis(object):
         sentiment = self.sentiment_lexicon.get(word, 0)
         return sentiment
 
-    def _return_top_words(self, model, feature_names, n_top_words = 50):
+    def _return_top_words(self, doc_top_dist, feature_names, n_top_words = 50):
+        index = np.argpartition(doc_top_dist, -3)[-3:]
         topic_dict = {}
-        for topic_idx, topic in enumerate(model.components_):
+        for top_num, ind in enumerate(index):
+            topic = self.processor.lda_model.components_[ind]
             topic_top_n_words = set([feature_names[i] for i in topic.argsort()[:-n_top_words - 1:-1]])
-            topic_dict[topic_idx] = topic_top_n_words
+            topic_dict[top_num] = topic_top_n_words
 
         return topic_dict
 
@@ -77,10 +79,9 @@ class TextSentimentAnalysis(object):
         return sentiments_dict
 
     def _lda_dim_reduction(self, vectorized_tokens, vectorizer):
-        lda = LatentDirichletAllocation(n_components = 3, learning_method = 'batch',
-                                        max_iter = 50).fit(vectorized_tokens)
+        doc_top_dist = self.processor.lda_model.transform(vectorized_tokens)
         feature_names = vectorizer.get_feature_names()
-        topic_dict = self._return_top_words(lda, feature_names)
+        topic_dict = self._return_top_words(doc_top_dist, feature_names)
 
         return topic_dict
 
@@ -205,9 +206,10 @@ if __name__ == '__main__':
     coll_name = 'article_text_data'
     uri = 'mongodb://root:9EThDhBJiBGP@localhost'
     processor_filepath = '/home/bitnami/processor.pkl'
+    lda_model_filepath = '/home/bitnami/lda_model.pkl'
     classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
     lexicon_filepath = '/home/bitnami/sentiment_lexicon.pkl'
-    prep = TextPreprocessor(vectorizer = processor_filepath)
+    prep = TextPreprocessor(vectorizer = processor_filepath, lda_model = lda_model_filepath)
     sentiment_analyzer = TextSentimentAnalysis(classifier_filepath, lexicon_filepath, prep)
     sentiment_analyzer.corpus_analytics(db_name, coll_name, uri)
     result = sentiment_analyzer.cluster_by_topic_similarity(db_name, coll_name, uri)

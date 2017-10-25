@@ -6,12 +6,13 @@ import pickle
 import outside_functions as of
 from stop_words import get_stop_words
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.decomposition import LatentDirichletAllocation
 from nltk.stem.wordnet import WordNetLemmatizer
 from bs4 import BeautifulSoup
 
 class TextPreprocessor(object):
 
-    def __init__(self, stop_words = 'en', tfidf = True, lemmatize = False, vectorizer = None):
+    def __init__(self, stop_words = 'en', tfidf = True, lemmatize = False, vectorizer = None, lda_model = None):
         self.stop_words = get_stop_words(stop_words)
         self.tfidf = tfidf
         self.lemmatize = lemmatize
@@ -21,6 +22,12 @@ class TextPreprocessor(object):
             print "loaded pickled vectorizer"
         else:
             self.vectorizer = vectorizer
+
+        if lda_model != None:
+            with open(lda_model, 'rb') as f:
+                self.lda_model = pickle.load(f)
+        else:
+            self.lda_model = None
 
     def _launch_mongo(self, db_name, coll_name, uri):
         mc = pymongo.MongoClient(uri)
@@ -68,16 +75,17 @@ class TextPreprocessor(object):
 
         return vectorized
 
-    def _gen_corpus(self, docs_tokens):
-        for doc in docs_tokens:
-            yield doc
-
     def _tokenize(self, article):
         stopped_tokens = self._remove_stop_words(article)
         encoded_tokens = self._encode_ascii(stopped_tokens)
         no_just_punc_tokens = [tok for tok in encoded_tokens if tok not in string.punctuation]
 
         return no_just_punc_tokens
+
+    def _train_lda(self, vectorized_documents):
+        lda = LatentDirichletAllocation(n_components = 300, learning_method = 'batch',
+                                        max_iter = 100, n_jobs = -1).fit(vectorized_documents)
+        self.lda = lda
 
     # ----------- private methods above this line -----------
 
@@ -102,7 +110,7 @@ class TextPreprocessor(object):
 
         return self.vectorizer, vectorized_tokens
 
-    def db_pipeline(self, processor_filepath, db_name, coll_name, uri = None):
+    def db_pipeline(self, processor_filepath, lda_model_filepath, db_name, coll_name, uri = None):
         coll = self._launch_mongo(db_name, coll_name, uri)
         all_docs = []
         error_counter, success = 0, 0
@@ -121,19 +129,27 @@ class TextPreprocessor(object):
                 error_counter += 1
                 print 'TypeError, Moving On. Error #{}'.format(error_counter)
 
-        corpus = self._gen_corpus(all_docs)
-
         if self.tfidf:
             self.vectorizer = TfidfVectorizer(preprocessor = of.tfidf_lambda,
-                                              tokenizer = of.tfidf_lambda, min_df = 0.1).fit(corpus)
+                                              tokenizer = of.tfidf_lambda).fit(all_docs)
         else:
             self.vectorizer = CountVectorizer(preprocessor = of.tfidf_lambda,
-                                              tokenizer = of.tfidf_lambda, min_df = 0.1).fit(corpus)
+                                              tokenizer = of.tfidf_lambda).fit(all_docs)
+
+        print 'training lda'
+        
+        vectorized_docs = self.vectorizer.transform(all_docs)
+        self._train_lda(vectorized_docs)
+
+        print 'pickle-ing'
 
         with open(processor_filepath, 'wb') as f:
             pickle.dump(self.vectorizer, f)
 
-        print "success TFIDF Vectorizer has been trained"
+        with open(lda_filepath, 'wb') as f:
+            pickle.dump(self.lda_model)
+
+        print "success TFIDF Vectorizer and LDA Model have been trained"
 
 if __name__ == "__main__":
         db_name = 'test_articles'
@@ -141,5 +157,6 @@ if __name__ == "__main__":
         uri = 'mongodb://root:9EThDhBJiBGP@localhost'
         processor_filepath = '/home/bitnami/processor.pkl'
         classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
+        lda_model = '/home/bitnami/lda_model.pkl'
         prep = TextPreprocessor()
-        prep.db_pipeline(processor_filepath, db_name, coll_name, uri)
+        prep.db_pipeline(processor_filepath, lda_model, db_name, coll_name, uri)

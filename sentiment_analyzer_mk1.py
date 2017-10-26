@@ -179,7 +179,7 @@ class TextSentimentAnalysis(object):
 
         return article_ids, u, h_cluster
 
-    def predict_on_new_article(self, url, db_name, coll_name, uri = None):
+    def classify_new_article(self, url, db_name, coll_name, uri = None):
         coll = self._launch_mongo(db_name, coll_name, uri)
         article = self.processor.new_article(url)
         vectorizer, vectorized = self.processor.generate_vectors(article)
@@ -198,23 +198,43 @@ class TextSentimentAnalysis(object):
         lda_predict = self.lda_classifier.predict(vectorized)
         class_predict = self.cluster_classifier.predict(u)
 
-        return lda_predict, class_predict
+        return article_info, lda_predict, class_predict, sentiments_dict
+
+    def report_for_article(self, lda_predict, class_predict, sentiments_dict, article_ids, h_cluster, db_name, coll_name, uri = None):
+        coll = self._launch_mongo(db_name, coll_name, uri)
+        article_dict = defaultdict(list)
+        for i, classification in enumerate(class_predict):
+            index = np.argwhere(np.array(h_cluster) = classification)
+            for ind in index:
+                doc_id, topic = article_ids[ind]
+                document = coll.find({'id':doc_id})
+                sentiment_score = sum(document['sentiment'][topic]['predictions'])
+                new_article_score = sum(sentiments_dict['topic{}'.format(i)]['predictions'])
+                if new_article_score * sentiment_score < 0:
+                    article_dict[i].append(document['article'])
+
+        return article_dict
 
 
 if __name__ == '__main__':
-    db_name = 'test_articles'
+    db_name = 'articles_test_db'
     coll_name = 'article_text_data'
-    uri = 'mongodb://root:9EThDhBJiBGP@localhost'
+    uri = 'mongodb://root:TWV7Y1t7hS7P@localhost'
     processor_filepath = '/home/bitnami/processor.pkl'
     lda_model_filepath = '/home/bitnami/lda_model.pkl'
     classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
     lexicon_filepath = '/home/bitnami/sentiment_lexicon.pkl'
     prep = TextPreprocessor(vectorizer = processor_filepath, lda_model = lda_model_filepath)
     sentiment_analyzer = TextSentimentAnalysis(classifier_filepath, lexicon_filepath, prep)
-    sentiment_analyzer.corpus_analytics(db_name, coll_name, uri)
+    sentiment_analyzer.corpus_analytics(db_name, coll_name, uri) #only needs to be run the first time
     result = sentiment_analyzer.cluster_by_topic_similarity(db_name, coll_name, uri)
-    article_ids, svd_matrix, h_cluster= result
+    article_ids, svd_matrix, h_cluster = result
     print np.unique(np.array(h_cluster), return_counts = True)
     url = 'http://www.foxnews.com/politics/2017/10/24/gop-sen-jeff-flake-says-wont-seek-re-election-in-2018.html'
-    lda_predict, prediction = sentiment_analyzer.predict_on_new_article(url, db_name, coll_name, uri)
-    print lda_predict, prediction
+    result = sentiment_analyzer.classify_new_article(url, db_name, coll_name, uri)
+    article_info, lda_predict, prediction, sentiments = results
+    print lda_predict, prediction, sentiments
+    article_dict = sentiment_analyzer.report_for_article(lda_predict, prediction, sentiments,
+                                                         article_ids, h_cluster, db_name, coll_name, uri)
+
+    print article_dict

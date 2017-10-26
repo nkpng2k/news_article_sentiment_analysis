@@ -84,7 +84,7 @@ class TextPreprocessor(object):
 
     def _train_lda(self, vectorized_documents):
         lda = LatentDirichletAllocation(n_components = 300, learning_method = 'batch',
-                                        max_iter = 100, n_jobs = -1).fit(vectorized_documents)
+                                        max_iter = 50, n_jobs = -1, verbose = 2).fit(vectorized_documents)
         self.lda = lda
 
     # ----------- private methods above this line -----------
@@ -137,7 +137,7 @@ class TextPreprocessor(object):
                                               tokenizer = of.tfidf_lambda).fit(all_docs)
 
         print 'training lda'
-        
+
         vectorized_docs = self.vectorizer.transform(all_docs)
         self._train_lda(vectorized_docs)
 
@@ -152,9 +152,9 @@ class TextPreprocessor(object):
         print "success TFIDF Vectorizer and LDA Model have been trained"
 
 if __name__ == "__main__":
-        db_name = 'test_articles'
+        db_name = 'articles_test_db'
         coll_name = 'article_text_data'
-        uri = 'mongodb://root:9EThDhBJiBGP@localhost'
+        uri = 'mongodb://root:TWV7Y1t7hS7P@localhost'
         processor_filepath = '/home/bitnami/processor.pkl'
         classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
         lda_model = '/home/bitnami/lda_model.pkl'

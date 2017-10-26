@@ -26,6 +26,7 @@ class TextPreprocessor(object):
         if lda_model != None:
             with open(lda_model, 'rb') as f:
                 self.lda_model = pickle.load(f)
+                print "loaded pickled lda model"
         else:
             self.lda_model = None
 
@@ -79,13 +80,16 @@ class TextPreprocessor(object):
         stopped_tokens = self._remove_stop_words(article)
         encoded_tokens = self._encode_ascii(stopped_tokens)
         no_just_punc_tokens = [tok for tok in encoded_tokens if tok not in string.punctuation]
-
-        return no_just_punc_tokens
+        if self.lemmatize:
+            lemmed_tokens = self._lemmatize(no_just_punc_tokens)
+            return lemmed_tokens
+        else:
+            return no_just_punc_tokens
 
     def _train_lda(self, vectorized_documents):
         lda = LatentDirichletAllocation(n_components = 300, learning_method = 'batch',
                                         max_iter = 50, n_jobs = -1, verbose = 5).fit(vectorized_documents)
-        self.lda = lda
+        self.lda_model = lda
 
     # ----------- private methods above this line -----------
 
@@ -104,8 +108,10 @@ class TextPreprocessor(object):
         cleaned_tokens = self._tokenize(article)
         if self.lemmatize:
             lemmed_tokens = self._lemmatize(cleaned_tokens)
+            lemmed_tokens = [lemmed_tokens]
             vectorized_tokens = self._vectorize(lemmed_tokens)
         else:
+            cleaned_tokens = [cleaned_tokens]
             vectorized_tokens = self._vectorize(cleaned_tokens)
 
         return self.vectorizer, vectorized_tokens
@@ -114,15 +120,12 @@ class TextPreprocessor(object):
         coll = self._launch_mongo(db_name, coll_name, uri)
         all_docs = []
         error_counter, success = 0, 0
-        for doc in coll.find(snapshot = True).batch_size(25):
+        for doc in coll.find(snapshot = True).batch_size(25).limit(500):
             try:
                 cleaned = self._correct_sentences(doc['article'])
                 cleaned_tokens = self._tokenize(cleaned)
-                if self.lemmatize:
-                    lemmed_tokens = self._lemmatize(cleaned_tokens)
-                    all_docs.append(lemmed_tokens)
-                else:
-                    all_docs.append(cleaned_tokens)
+
+                all_docs.append(cleaned_tokens)
                 success += 1
                 print 'Success # {}'.format(success)
             except TypeError:
@@ -163,5 +166,5 @@ if __name__ == "__main__":
         processor_filepath = '/home/bitnami/processor.pkl'
         classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
         lda_model = '/home/bitnami/lda_model.pkl'
-        prep = TextPreprocessor()
+        prep = TextPreprocessor(lemmatize = True)
         prep.db_pipeline(processor_filepath, lda_model, db_name, coll_name, uri)

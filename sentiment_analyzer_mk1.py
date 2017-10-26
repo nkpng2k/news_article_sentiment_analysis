@@ -64,7 +64,7 @@ class TextSentimentAnalysis(object):
         sentiments_dict = defaultdict(lambda : defaultdict(list))
         for k, v in topic_dict.iteritems():
             for sentence in blob.sentences:
-                sent_set = set(sentence.split())
+                sent_set = set(self.processor._tokenize(sentence))
                 if len(v.intersection(sent_set)) > 1: #2 is an arbitrary number
                     # sent_dist = self.sentiment_classifier.prob_classify(sentence)
                     # sent_pred = sent_dist.max()
@@ -80,6 +80,7 @@ class TextSentimentAnalysis(object):
 
     def _lda_dim_reduction(self, vectorized_tokens, vectorizer):
         doc_top_dist = self.processor.lda_model.transform(vectorized_tokens)
+        doc_top_dist = doc_top_dist[0]
         feature_names = vectorizer.get_feature_names()
         topic_dict = self._return_top_words(doc_top_dist, feature_names)
 
@@ -133,7 +134,7 @@ class TextSentimentAnalysis(object):
         coll = self._launch_mongo(db_name, coll_name, uri)
         count, error_count = 0, 0
         print 'Analyzing Articles and Storing in Mongo'
-        for doc in coll.find(snapshot = True).batch_size(25):
+        for doc in coll.find(snapshot = True).batch_size(25).limit(500):
             try:
                 doc_id = doc['_id']
                 article = doc['article']
@@ -229,7 +230,7 @@ if __name__ == '__main__':
     lda_model_filepath = '/home/bitnami/lda_model.pkl'
     classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
     lexicon_filepath = '/home/bitnami/sentiment_lexicon.pkl'
-    prep = TextPreprocessor(vectorizer = processor_filepath, lda_model = lda_model_filepath)
+    prep = TextPreprocessor(lemmatize = True, vectorizer = processor_filepath, lda_model = lda_model_filepath)
     sentiment_analyzer = TextSentimentAnalysis(classifier_filepath, lexicon_filepath, prep)
     sentiment_analyzer.corpus_analytics(db_name, coll_name, uri) #only needs to be run the first time
     result = sentiment_analyzer.cluster_by_topic_similarity(db_name, coll_name, uri)

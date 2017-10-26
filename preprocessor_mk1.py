@@ -131,12 +131,12 @@ class TextPreprocessor(object):
 
         if self.tfidf:
             self.vectorizer = TfidfVectorizer(preprocessor = of.tfidf_lambda,
-                                              tokenizer = of.tfidf_lambda).fit(all_docs)
+                                              tokenizer = of.tfidf_lambda, max_df = 0.95).fit(all_docs)
         else:
             self.vectorizer = CountVectorizer(preprocessor = of.tfidf_lambda,
-                                              tokenizer = of.tfidf_lambda).fit(all_docs)
+                                              tokenizer = of.tfidf_lambda, max_df = 0.95).fit(all_docs)
 
-        print 'training lda'
+        print len(self.vectorizer.vocabulary_) , 'training lda'
 
         vectorized_docs = self.vectorizer.transform(all_docs)
         self._train_lda(vectorized_docs)
@@ -146,7 +146,7 @@ class TextPreprocessor(object):
         with open(processor_filepath, 'wb') as f:
             pickle.dump(self.vectorizer, f)
 
-        with open(lda_filepath, 'wb') as f:
+        with open(lda_model_filepath, 'wb') as f:
             pickle.dump(self.lda_model)
 
         print "success TFIDF Vectorizer and LDA Model have been trained"

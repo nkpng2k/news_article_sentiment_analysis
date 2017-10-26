@@ -84,7 +84,7 @@ class TextPreprocessor(object):
 
     def _train_lda(self, vectorized_documents):
         lda = LatentDirichletAllocation(n_components = 300, learning_method = 'batch',
-                                        max_iter = 50, n_jobs = -1, verbose = 2).fit(vectorized_documents)
+                                        max_iter = 50, n_jobs = -1, verbose = 5).fit(vectorized_documents)
         self.lda = lda
 
     # ----------- private methods above this line -----------

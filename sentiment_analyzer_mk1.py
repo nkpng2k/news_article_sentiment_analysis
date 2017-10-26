@@ -204,7 +204,7 @@ class TextSentimentAnalysis(object):
         coll = self._launch_mongo(db_name, coll_name, uri)
         article_dict = defaultdict(list)
         for i, classification in enumerate(class_predict):
-            index = np.argwhere(np.array(h_cluster) = classification)
+            index = np.argwhere(np.array(h_cluster) == classification)
             for ind in index:
                 doc_id, topic = article_ids[ind]
                 document = coll.find({'id':doc_id})
@@ -217,9 +217,14 @@ class TextSentimentAnalysis(object):
 
 
 if __name__ == '__main__':
-    db_name = 'articles_test_db'
-    coll_name = 'article_text_data'
-    uri = 'mongodb://root:TWV7Y1t7hS7P@localhost'
+    with open('local_access.txt','r') as f:
+        access_tokens = []
+        for line in f:
+            line = line.strip()
+            access_tokens.append(line)
+    db_name = access_tokens[1]
+    coll_name = access_tokens[2]
+    uri = 'mongodb://root:{}@localhost'.format(access_tokens[0])
     processor_filepath = '/home/bitnami/processor.pkl'
     lda_model_filepath = '/home/bitnami/lda_model.pkl'
     classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'

@@ -131,10 +131,10 @@ class TextPreprocessor(object):
 
         if self.tfidf:
             self.vectorizer = TfidfVectorizer(preprocessor = of.tfidf_lambda,
-                                              tokenizer = of.tfidf_lambda, max_df = 0.95).fit(all_docs)
+                                              tokenizer = of.tfidf_lambda, max_df = 0.90).fit(all_docs)
         else:
             self.vectorizer = CountVectorizer(preprocessor = of.tfidf_lambda,
-                                              tokenizer = of.tfidf_lambda, max_df = 0.95).fit(all_docs)
+                                              tokenizer = of.tfidf_lambda, max_df = 0.90).fit(all_docs)
 
         print len(self.vectorizer.vocabulary_) , 'training lda'
 
@@ -147,14 +147,19 @@ class TextPreprocessor(object):
             pickle.dump(self.vectorizer, f)
 
         with open(lda_model_filepath, 'wb') as f:
-            pickle.dump(self.lda_model)
+            pickle.dump(self.lda_model, f)
 
         print "success TFIDF Vectorizer and LDA Model have been trained"
 
 if __name__ == "__main__":
-        db_name = 'articles_test_db'
-        coll_name = 'article_text_data'
-        uri = 'mongodb://root:TWV7Y1t7hS7P@localhost'
+        with open('local_access.txt','r') as f:
+            access_tokens = []
+            for line in f:
+                line = line.strip()
+                access_tokens.append(line)
+        db_name = access_tokens[1]
+        coll_name = access_tokens[2]
+        uri = 'mongodb://root:{}@localhost'.format(access_tokens[0])
         processor_filepath = '/home/bitnami/processor.pkl'
         classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
         lda_model = '/home/bitnami/lda_model.pkl'

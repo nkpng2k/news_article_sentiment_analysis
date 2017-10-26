@@ -15,7 +15,8 @@ import numpy as np
 
 class TextSentimentAnalysis(object):
 
-    def __init__(self, classifier_filepath, sentiment_lexicon_path, processor):
+    def __init__(self, classifier_filepath, sentiment_lexicon_path, processor, db_name, coll_name, uri):
+        self.coll = self._launch_mongo(db_name, coll_name, uri)
         with open(classifier_filepath, 'rb') as f:
             self.sentiment_classifier = pickle.load(f)
         with open(sentiment_lexicon_path, 'rb') as f:
@@ -108,6 +109,7 @@ class TextSentimentAnalysis(object):
 
     def _train_clusters(self, topics_list):
         vectorized = self.processor._vectorize(topics_list).toarray()
+        vectorized = np.nan_to_num(vectorized)
         self.tsvd_cut = self._train_trunc_svd(vectorized)
         skl_u = self._matrix_svd(vectorized)
         dist = 1 - cosine_similarity(skl_u)
@@ -127,21 +129,19 @@ class TextSentimentAnalysis(object):
         self.cluster_classifier.set_params(**best_params)
         self.cluster_classifier.fit(X_reduced, y)
 
-
     # --------- All private methods above this line -------
 
-    def corpus_analytics(self, db_name, coll_name, uri = None):
-        coll = self._launch_mongo(db_name, coll_name, uri)
+    def corpus_analytics(self):
         count, error_count = 0, 0
         print 'Analyzing Articles and Storing in Mongo'
-        for doc in coll.find(snapshot = True).batch_size(25).limit(500):
+        for doc in self.coll.find(snapshot = True).batch_size(25).limit(500):
             try:
                 doc_id = doc['_id']
                 article = doc['article']
                 cleaned = self.processor._correct_sentences(article)
                 vectorizer, vectorized_tokens = self.processor.generate_vectors(cleaned)
                 art_pred, sentiments_dict = self._find_article_sentiment(cleaned, vectorized_tokens, vectorizer)
-                coll.find_one_and_update({'_id':doc_id}, {'$set':{'sentiment':sentiments_dict}})
+                self.coll.find_one_and_update({'_id':doc_id}, {'$set':{'sentiment':sentiments_dict}})
                 count += 1
                 print 'Pass #{}'.format(count)
             except TypeError:
@@ -152,18 +152,19 @@ class TextSentimentAnalysis(object):
                 print 'ValueError, Moving On #{}'.format(error_count)
         print 'COMPLETE'
 
-    def cluster_by_topic_similarity(self, db_name, coll_name, uri = None, desired_exp_var = 0.9):
+    def cluster_by_topic_similarity(self, desired_exp_var = 0.9):
         self.exp_var_desired = desired_exp_var
-        coll = self._launch_mongo(db_name, coll_name, uri)
         count, error_count = 0, 0
         topics_list = []
         article_ids = []
-        for doc in coll.find(snapshot = True).batch_size(25).limit(500):
+        article_topics = []
+        for doc in self.coll.find(snapshot = True).batch_size(25).limit(250):
             try:
                 doc_id = doc['_id']
                 for k, v in doc['sentiment'].iteritems():
                     topics_list.append(v['topic_features'])
-                    article_ids.append((doc_id, k))
+                    article_ids.append(doc_id)
+                    article_topics.append(k)
                 count += 1
                 print "Pass #{}".format(count)
             except:
@@ -172,43 +173,42 @@ class TextSentimentAnalysis(object):
 
         vectorized, u, h_cluster = self._train_clusters(topics_list)
 
-        for index, article in enumerate(article_ids):
-            doc_id, topic = article
-            coll.find_one_and_update({'_id':doc_id}, {'$set':{'sentiment.'+ topic + '.label': h_cluster[index]}})
+        for index, doc_id in enumerate(article_ids):
+            topic = article_topics[index]
+            label = h_cluster[index].astype(np.int64)
+            print 'sentiment.' + topic + '.label', label
+            self.coll.find_one_and_update({'_id':doc_id}, {'$set':{'sentiment.'+ topic + '.label': label}})
 
         self._select_best_classifier(u, vectorized, h_cluster)
 
-        return article_ids, u, h_cluster
+        return article_ids, article_topics, u, h_cluster
 
-    def classify_new_article(self, url, db_name, coll_name, uri = None):
-        coll = self._launch_mongo(db_name, coll_name, uri)
+    def classify_new_article(self, url):
         article = self.processor.new_article(url)
         vectorizer, vectorized = self.processor.generate_vectors(article)
         art_pred, sentiments_dict = self._find_article_sentiment(article, vectorized, vectorizer)
         try:
-            coll.insert_one({'url':url, 'article':article, 'sentiment':sentiments_dict})
+            self.coll.insert_one({'url':url, 'article':article, 'sentiment':sentiments_dict})
         except pymongo.errors.DuplicateKeyError:
             print 'this url already exists I do not need to do anything with it'
         topics_list = []
-        article_info = []
         for k, v in sentiments_dict.iteritems():
             topics_list.append(v['topic_features'])
-            article_info.append(k)
         vectorized = self.processor._vectorize(topics_list).toarray()
         u = self._matrix_svd(vectorized)
         lda_predict = self.lda_classifier.predict(vectorized)
         class_predict = self.cluster_classifier.predict(u)
 
-        return article_info, lda_predict, class_predict, sentiments_dict
+        return lda_predict, class_predict, sentiments_dict
 
-    def report_for_article(self, lda_predict, class_predict, sentiments_dict, article_ids, h_cluster, db_name, coll_name, uri = None):
-        coll = self._launch_mongo(db_name, coll_name, uri)
+    def report_for_article(self, lda_predict, class_predict, sentiments_dict, article_ids, article_topics, h_cluster):
         article_dict = defaultdict(list)
         for i, classification in enumerate(class_predict):
             index = np.argwhere(np.array(h_cluster) == classification)
             for ind in index:
-                doc_id, topic = article_ids[ind]
-                document = coll.find({'id':doc_id})
+                doc_id = article_ids[ind]
+                topic = article_topics[ind]
+                document = self.coll.find({'id':doc_id})
                 sentiment_score = sum(document['sentiment'][topic]['predictions'])
                 new_article_score = sum(sentiments_dict['topic{}'.format(i)]['predictions'])
                 if new_article_score * sentiment_score < 0:
@@ -231,16 +231,15 @@ if __name__ == '__main__':
     classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
     lexicon_filepath = '/home/bitnami/sentiment_lexicon.pkl'
     prep = TextPreprocessor(lemmatize = True, vectorizer = processor_filepath, lda_model = lda_model_filepath)
-    sentiment_analyzer = TextSentimentAnalysis(classifier_filepath, lexicon_filepath, prep)
-    sentiment_analyzer.corpus_analytics(db_name, coll_name, uri) #only needs to be run the first time
-    result = sentiment_analyzer.cluster_by_topic_similarity(db_name, coll_name, uri)
-    article_ids, svd_matrix, h_cluster = result
+    sentiment_analyzer = TextSentimentAnalysis(classifier_filepath, lexicon_filepath, prep, db_name, coll_name, uri)
+    # sentiment_analyzer.corpus_analytics(db_name, coll_name, uri) #only needs to be run the first time
+    result = sentiment_analyzer.cluster_by_topic_similarity()
+    article_ids, article_topics, svd_matrix, h_cluster = result
     print np.unique(np.array(h_cluster), return_counts = True)
     url = 'http://www.foxnews.com/politics/2017/10/24/gop-sen-jeff-flake-says-wont-seek-re-election-in-2018.html'
-    result = sentiment_analyzer.classify_new_article(url, db_name, coll_name, uri)
-    article_info, lda_predict, prediction, sentiments = results
-    print lda_predict, prediction, sentiments
-    article_dict = sentiment_analyzer.report_for_article(lda_predict, prediction, sentiments,
-                                                         article_ids, h_cluster, db_name, coll_name, uri)
+    result = sentiment_analyzer.classify_new_article(url)
+    lda_predict, prediction, sentiments = result
+    print lda_predict, prediction
+    article_dict = sentiment_analyzer.report_for_article(lda_predict, prediction, sentiments, article_ids, article_topics, h_cluster)
 
     print article_dict

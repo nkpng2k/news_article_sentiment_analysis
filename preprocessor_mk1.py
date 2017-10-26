@@ -134,10 +134,10 @@ class TextPreprocessor(object):
 
         if self.tfidf:
             self.vectorizer = TfidfVectorizer(preprocessor = of.tfidf_lambda,
-                                              tokenizer = of.tfidf_lambda, max_df = 0.90).fit(all_docs)
+                                              tokenizer = of.tfidf_lambda, max_df = 0.85).fit(all_docs)
         else:
             self.vectorizer = CountVectorizer(preprocessor = of.tfidf_lambda,
-                                              tokenizer = of.tfidf_lambda, max_df = 0.90).fit(all_docs)
+                                              tokenizer = of.tfidf_lambda, max_df = 0.85).fit(all_docs)
 
         print len(self.vectorizer.vocabulary_) , 'training lda'
 

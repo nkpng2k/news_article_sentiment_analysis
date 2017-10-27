@@ -54,6 +54,14 @@ class TextSentimentAnalysis(object):
 
         return topic_dict
 
+    def _lda_dim_reduction(self, vectorized_tokens, vectorizer):
+        doc_top_dist = self.processor.lda_model.transform(vectorized_tokens)
+        doc_top_dist = doc_top_dist[0]
+        feature_names = vectorizer.get_feature_names()
+        topic_dict = self._return_top_words(doc_top_dist, feature_names)
+
+        return topic_dict
+
     def _whole_doc_sentiment(self, article):
         article_prob_dist = self.sentiment_classifier.prob_classify(article)
         prediction = article_prob_dist.max()
@@ -79,13 +87,13 @@ class TextSentimentAnalysis(object):
 
         return sentiments_dict
 
-    def _lda_dim_reduction(self, vectorized_tokens, vectorizer):
-        doc_top_dist = self.processor.lda_model.transform(vectorized_tokens)
-        doc_top_dist = doc_top_dist[0]
-        feature_names = vectorizer.get_feature_names()
-        topic_dict = self._return_top_words(doc_top_dist, feature_names)
+    def _find_article_sentiment(self, article, vectorized_tokens, vectorizer):
+        blob = self._create_blob(article)
+        art_pred, art_prob = self._whole_doc_sentiment(article)
+        topic_dict = self._lda_dim_reduction(vectorized_tokens, vectorizer)
+        sentiments_dict = self._sentiment_per_sentence(topic_dict, blob)
 
-        return topic_dict
+        return art_pred, sentiments_dict
 
     def _matrix_svd(self, matrix):
         skl_u = self.tsvd.transform(matrix)
@@ -98,14 +106,6 @@ class TextSentimentAnalysis(object):
             if self.tsvd.explained_variance_ratio_[:i].sum() > self.exp_var_desired:
                 print i, self.tsvd.explained_variance_ratio_[:i].sum()
                 return i
-
-    def _find_article_sentiment(self, article, vectorized_tokens, vectorizer):
-        blob = self._create_blob(article)
-        art_pred, art_prob = self._whole_doc_sentiment(article)
-        topic_dict = self._lda_dim_reduction(vectorized_tokens, vectorizer)
-        sentiments_dict = self._sentiment_per_sentence(topic_dict, blob)
-
-        return art_pred, sentiments_dict
 
     def _train_clusters(self, topics_list):
         vectorized = self.processor._vectorize(topics_list).toarray()
@@ -206,8 +206,8 @@ class TextSentimentAnalysis(object):
         for i, classification in enumerate(class_predict):
             index = np.argwhere(np.array(h_cluster) == classification)
             for ind in index:
-                doc_id = article_ids[ind]
-                topic = article_topics[ind]
+                doc_id = article_ids[ind[0]]
+                topic = article_topics[ind[0]]
                 document = self.coll.find({'id':doc_id})
                 sentiment_score = sum(document['sentiment'][topic]['predictions'])
                 new_article_score = sum(sentiments_dict['topic{}'.format(i)]['predictions'])

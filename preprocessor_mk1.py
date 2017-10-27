@@ -71,11 +71,6 @@ class TextPreprocessor(object):
             lemmed.append(word)
         return lemmed
 
-    def _vectorize(self, tokens):
-        vectorized = self.vectorizer.transform(tokens)
-
-        return vectorized
-
     def _tokenize(self, article):
         stopped_tokens = self._remove_stop_words(article)
         encoded_tokens = self._encode_ascii(stopped_tokens)
@@ -85,6 +80,11 @@ class TextPreprocessor(object):
             return lemmed_tokens
         else:
             return no_just_punc_tokens
+
+    def _vectorize(self, tokens):
+        vectorized = self.vectorizer.transform(tokens)
+
+        return vectorized
 
     def _train_lda(self, vectorized_documents):
         lda = LatentDirichletAllocation(n_components = 300, learning_method = 'batch',

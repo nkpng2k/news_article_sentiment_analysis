@@ -10,9 +10,7 @@ Input: X --> vectorized, dense matrix (output of svd)
 Output: model
 """
 
-def pick_classifier(X_reduced, X_sparse, y):
-    lin_da = LinearDiscriminantAnalysis()
-    lin_da_params = {'tol': [0.0001, 0.00001, 0.000001]}
+def pick_classifier(X_reduced, y):
     rand_forest = RandomForestClassifier()
     rand_forest_params = {'n_estimators': [10,100,1000], 'max_features': [0.1, 0.2, 0.5, 0.8], 'min_samples_split': [2, 4, 8]}
     grad_boost = GradientBoostingClassifier()
@@ -35,14 +33,9 @@ def pick_classifier(X_reduced, X_sparse, y):
             best_params = clf.best_params_
             best_estimator = estimator
 
-    lda_clf = GridSearchCV(lin_da, lin_da_params)
-    lda_clf.fit(X_sparse, y)
-    print "lda parameters: ", lda_clf.best_params_
-    lda_best_params = lda_clf.best_params_
-
     print best_estimator
     print best_params
     print best_score
 
     print 'returning ideal estimator information'
-    return best_estimator, best_params, lda_best_params
+    return best_estimator, best_params

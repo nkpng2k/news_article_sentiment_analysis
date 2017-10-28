@@ -26,7 +26,6 @@ class TextSentimentAnalysis(object):
         self.tsvd_cut = None
         self.n_h_clusters = None
         self.exp_var_desired = None
-        self.lda_classifier = None
         self.cluster_classifier = None
         print 'all dependencies loaded'
 
@@ -74,7 +73,7 @@ class TextSentimentAnalysis(object):
         for k, v in topic_dict.iteritems():
             for sentence in blob.sentences:
                 sent_set = set(self.processor._tokenize(sentence))
-                if len(v.intersection(sent_set)) > 1: #2 is an arbitrary number
+                if len(v.intersection(sent_set)) >= 1: #2 is an arbitrary number
                     # sent_dist = self.sentiment_classifier.prob_classify(sentence)
                     # sent_pred = sent_dist.max()
                     sent_pred = 0
@@ -120,11 +119,8 @@ class TextSentimentAnalysis(object):
 
         return vectorized, skl_u, h_cluster
 
-    def _select_best_classifier(self, X_reduced, X_sparse, y):
-        best_estimator, best_params, lda_best_params = pick_classifier(X_reduced, X_sparse, y)
-        self.lda_classifier = LinearDiscriminantAnalysis()
-        self.lda_classifier.set_params(**lda_best_params)
-        self.lda_classifier.fit(X_sparse, y)
+    def _select_best_classifier(self, X_reduced, y):
+        best_estimator, best_params = pick_classifier(X_reduced, y)
         self.cluster_classifier = best_estimator
         self.cluster_classifier.set_params(**best_params)
         self.cluster_classifier.fit(X_reduced, y)
@@ -134,7 +130,7 @@ class TextSentimentAnalysis(object):
     def corpus_analytics(self):
         count, error_count = 0, 0
         print 'Analyzing Articles and Storing in Mongo'
-        for doc in self.coll.find(snapshot = True).batch_size(25).limit(500):
+        for doc in self.coll.find(snapshot = True).batch_size(25):
             try:
                 doc_id = doc['_id']
                 article = doc['article']
@@ -158,7 +154,7 @@ class TextSentimentAnalysis(object):
         topics_list = []
         article_ids = []
         article_topics = []
-        for doc in self.coll.find(snapshot = True).batch_size(25).limit(250):
+        for doc in self.coll.find(snapshot = True).batch_size(25).limit(1000):
             try:
                 doc_id = doc['_id']
                 for k, v in doc['sentiment'].iteritems():
@@ -179,7 +175,7 @@ class TextSentimentAnalysis(object):
             print 'sentiment.' + topic + '.label', label
             self.coll.find_one_and_update({'_id':doc_id}, {'$set':{'sentiment.'+ topic + '.label': label}})
 
-        self._select_best_classifier(u, vectorized, h_cluster)
+        self._select_best_classifier(u, h_cluster)
 
         return article_ids, article_topics, u, h_cluster
 
@@ -196,20 +192,25 @@ class TextSentimentAnalysis(object):
             topics_list.append(v['topic_features'])
         vectorized = self.processor._vectorize(topics_list).toarray()
         u = self._matrix_svd(vectorized)
-        lda_predict = self.lda_classifier.predict(vectorized)
         class_predict = self.cluster_classifier.predict(u)
 
-        return lda_predict, class_predict, sentiments_dict
+        return class_predict, sentiments_dict
 
-    def report_for_article(self, lda_predict, class_predict, sentiments_dict, article_ids, article_topics, h_cluster):
+    #TODO: THIS NEEDS TO BE FIXED ASAP
+    def report_for_article(self, class_predict, sentiments_dict, article_ids, article_topics, h_cluster):
         article_dict = defaultdict(list)
         for i, classification in enumerate(class_predict):
             index = np.argwhere(np.array(h_cluster) == classification)
             for ind in index:
                 doc_id = article_ids[ind[0]]
                 topic = article_topics[ind[0]]
-                document = self.coll.find({'id':doc_id})
-                sentiment_score = sum(document['sentiment'][topic]['predictions'])
+                document = self.coll.find_one({'_id':doc_id})
+                try:
+                    doc_sentiments = document['sentiment'][topic]['predictions']
+                    print document['sentiment'][topic]
+                except KeyError:
+                    continue
+                sentiment_score = sum(doc_sentiments)
                 new_article_score = sum(sentiments_dict['topic{}'.format(i)]['predictions'])
                 if new_article_score * sentiment_score < 0:
                     article_dict[i].append(document['article'])
@@ -232,14 +233,13 @@ if __name__ == '__main__':
     lexicon_filepath = '/home/bitnami/sentiment_lexicon.pkl'
     prep = TextPreprocessor(lemmatize = True, vectorizer = processor_filepath, lda_model = lda_model_filepath)
     sentiment_analyzer = TextSentimentAnalysis(classifier_filepath, lexicon_filepath, prep, db_name, coll_name, uri)
-    # sentiment_analyzer.corpus_analytics(db_name, coll_name, uri) #only needs to be run the first time
+    sentiment_analyzer.corpus_analytics() #only needs to be run the first time
     result = sentiment_analyzer.cluster_by_topic_similarity()
     article_ids, article_topics, svd_matrix, h_cluster = result
     print np.unique(np.array(h_cluster), return_counts = True)
     url = 'http://www.foxnews.com/politics/2017/10/24/gop-sen-jeff-flake-says-wont-seek-re-election-in-2018.html'
     result = sentiment_analyzer.classify_new_article(url)
-    lda_predict, prediction, sentiments = result
-    print lda_predict, prediction
-    article_dict = sentiment_analyzer.report_for_article(lda_predict, prediction, sentiments, article_ids, article_topics, h_cluster)
-
+    prediction, sentiments = result
+    print prediction
+    article_dict = sentiment_analyzer.report_for_article(prediction, sentiments, article_ids, article_topics, h_cluster)
     print article_dict

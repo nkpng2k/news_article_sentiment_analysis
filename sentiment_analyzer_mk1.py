@@ -73,7 +73,7 @@ class TextSentimentAnalysis(object):
         for k, v in topic_dict.iteritems():
             for sentence in blob.sentences:
                 sent_set = set(self.processor._tokenize(sentence))
-                if len(v.intersection(sent_set)) >= 1: #2 is an arbitrary number
+                if len(v.intersection(sent_set)) > 1: #2 is an arbitrary number
                     # sent_dist = self.sentiment_classifier.prob_classify(sentence)
                     # sent_pred = sent_dist.max()
                     sent_pred = 0
@@ -104,12 +104,14 @@ class TextSentimentAnalysis(object):
         for i in xrange(len(self.tsvd.explained_variance_ratio_)):
             if self.tsvd.explained_variance_ratio_[:i].sum() > self.exp_var_desired:
                 print i, self.tsvd.explained_variance_ratio_[:i].sum()
-                return i
+                self.tsvd_cut = i
+        with open('svd_model.pkl', 'wb') as f:
+            pickle.dump(self.tsvd, f)
 
     def _train_clusters(self, topics_list):
         vectorized = self.processor._vectorize(topics_list).toarray()
         vectorized = np.nan_to_num(vectorized)
-        self.tsvd_cut = self._train_trunc_svd(vectorized)
+        self._train_trunc_svd(vectorized)
         skl_u = self._matrix_svd(vectorized)
         dist = 1 - cosine_similarity(skl_u)
         link_matrix = hac.linkage(dist, metric = 'cosine', method = 'average')

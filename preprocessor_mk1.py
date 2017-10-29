@@ -139,7 +139,7 @@ class TextPreprocessor(object):
         coll = self._launch_mongo(db_name, coll_name, uri)
         all_docs = []
         error_counter, success = 0, 0
-        for doc in coll.find(snapshot = True).batch_size(25).limit(25000):
+        for doc in coll.find(snapshot = True).batch_size(25):
             try:
                 cleaned = self._correct_sentences(doc['article'])
                 cleaned_tokens = self._tokenize(cleaned)
@@ -153,10 +153,10 @@ class TextPreprocessor(object):
 
         if self.tfidf:
             self.vectorizer = TfidfVectorizer(preprocessor = of.tfidf_lambda, tokenizer = of.tfidf_lambda,
-                                              min_df = 0.0001, max_df = 0.90).fit(all_docs)
+                                              min_df = 0.00005, max_df = 0.90).fit(all_docs)
         else:
             self.vectorizer = CountVectorizer(preprocessor = of.tfidf_lambda, tokenizer = of.tfidf_lambda,
-                                               min_df = 0.0001, max_df = 0.90).fit(all_docs)
+                                               min_df = 0.00005, max_df = 0.90).fit(all_docs)
 
         print len(self.vectorizer.vocabulary_) , 'training lda'
 

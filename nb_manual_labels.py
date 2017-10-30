@@ -97,7 +97,7 @@ if __name__ == "__main__":
     classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
     lexicon_filepath = '/home/bitnami/sentiment_lexicon.pkl'
     svd_reducer = '/home/bitnami/svd_model.pkl'
-    db_name = 'test_articles'
+    db_name = 'news_articles'
     coll_name = 'sentiment_labels'
     uri = 'mongodb://root:9EThDhBJiBGP@localhost'
 

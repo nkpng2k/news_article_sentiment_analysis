@@ -257,7 +257,7 @@ if __name__ == '__main__':
     uri = 'mongodb://root:{}@localhost'.format(access_tokens[0])
     processor_filepath = '/home/bitnami/processor.pkl'
     lda_model_filepath = '/home/bitnami/lda_model.pkl'
-    classifier_filepath = '/home/bitnami/sentiment_classifier.pkl'
+    classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
     lexicon_filepath = '/home/bitnami/sentiment_lexicon.pkl'
     prep = TextPreprocessor(lemmatize = True, vectorizer = processor_filepath, lda_model = lda_model_filepath)
     sentiment_analyzer = TextSentimentAnalysis(classifier_filepath, lexicon_filepath, prep, db_name, coll_name, uri)

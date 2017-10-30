@@ -3,12 +3,11 @@ from textblob import TextBlob
 from textblob.classifiers import NaiveBayesClassifier
 from sklearn.decomposition import LatentDirichletAllocation, TruncatedSVD
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from collections import defaultdict
+from collections import defaultdict, Counter
 from sklearn.metrics.pairwise import cosine_similarity
 from topic_classifier import pick_classifier
 import outside_functions as of
 import scipy.cluster.hierarchy as hac
-import matplotlib.pyplot as plt
 import pickle
 import pymongo
 import numpy as np
@@ -61,38 +60,34 @@ class TextSentimentAnalysis(object):
 
         return topic_dict
 
-    def _whole_doc_sentiment(self, article):
-        article_prob_dist = self.sentiment_classifier.prob_classify(article)
-        prediction = article_prob_dist.max()
-        pred_prob = article_prob_dist.prob(prediction)
-
-        return prediction, pred_prob
-
     def _sentiment_per_sentence(self, topic_dict, blob):
         sentiments_dict = defaultdict(lambda : defaultdict(list))
         for k, v in topic_dict.iteritems():
+            predictions = Counter()
+            topic_sentences = []
+            sentence_sentiment = []
             for sentence in blob.sentences:
                 sent_set = set(self.processor._tokenize(sentence))
                 if len(v.intersection(sent_set)) > 1: #2 is an arbitrary number
-                    # sent_dist = self.sentiment_classifier.prob_classify(sentence)
-                    # sent_pred = sent_dist.max()
-                    sent_pred = 0
-                    for word in sent_set:
-                        sent_pred += self._simple_sentiment(word)
-                    print sent_pred
-                    sentiments_dict['topic_{}'.format(k)]['sentences'].append(str(sentence))
-                    sentiments_dict['topic_{}'.format(k)]['predictions'].append(sent_pred)
-            sentiments_dict['topic_{}'.format(k)]['topic_features'] = list(v)
+                    sent_vect = self.processor._vectorize(sent_set)
+                    prediction = self.sentiment_classifier.predict(sent_vect)
+                    predictions[prediction] += 1
+                    topic_sentences.append(sentence)
+                    sentence_sentiment.append(prediction)
+                    print prediction , predictions
+            topic_pred = predictions.most_common(1)[0][0]
+            sentiments_dict['topic_{}'.format(k)]['sentences'] = topic_sentences
+            sentiments_dict['topic_{}'.format(k)]['sentence_sentiment'] = sentence_sentiment
+            sentiments_dict['topic_{}'.format(k)]['topic_sentiment'] = topic_pred
 
         return sentiments_dict
 
     def _find_article_sentiment(self, article, vectorized_tokens, vectorizer):
         blob = self._create_blob(article)
-        art_pred, art_prob = self._whole_doc_sentiment(article)
         topic_dict = self._lda_dim_reduction(vectorized_tokens, vectorizer)
         sentiments_dict = self._sentiment_per_sentence(topic_dict, blob)
 
-        return art_pred, sentiments_dict
+        return sentiments_dict
 
     def _matrix_svd(self, matrix):
         skl_u = self.tsvd.transform(matrix)
@@ -129,6 +124,27 @@ class TextSentimentAnalysis(object):
 
     # --------- All private methods above this line -------
 
+    def extract_topic_features(self):
+        count, error_count = 0, 0
+        print "Using LDA to Extract Topic Features"
+        for doc in self.coll.find(snapshot = True).batch_size(25):
+            try:
+                doc_id = doc['_id']
+                article = doc['article']
+                cleaned = self.processor._correct_sentences(article)
+                vectorizer, vectorized_tokens = self.processor.generate_vectors(cleaned)
+                topic_dict = self._lda_dim_reduction(vectorized_tokens, vectorizer)
+                for k, v in topic_dict.iteritems():
+                    self.coll.find_one_and_update({'_id': doc_id}, {'$set': {'topic_{}'.format(k): {'topic_features': list(v)} } } )
+                count += 1
+                print 'Success # {}'.format(count)
+            except TypeError:
+                error_count += 1
+                print 'TypeError, Moving on. Error # {}'.format(error_count)
+            except ValueError:
+                error_count += 1
+                print 'ValueError, Moving on. Error # {}'.format(error_count)
+
     def corpus_analytics(self):
         count, error_count = 0, 0
         print 'Analyzing Articles and Storing in Mongo'
@@ -138,8 +154,12 @@ class TextSentimentAnalysis(object):
                 article = doc['article']
                 cleaned = self.processor._correct_sentences(article)
                 vectorizer, vectorized_tokens = self.processor.generate_vectors(cleaned)
-                art_pred, sentiments_dict = self._find_article_sentiment(cleaned, vectorized_tokens, vectorizer)
-                self.coll.find_one_and_update({'_id':doc_id}, {'$set':{'sentiment':sentiments_dict}})
+                sentiments_dict = self._find_article_sentiment(cleaned, vectorized_tokens, vectorizer)
+                for k, v in sentiments_dict.iteritems():
+                    self.coll.find_one_and_update({'_id':doc_id},
+                                                  {'$set':{'sentences': v['sentences'],
+                                                           'sentence_sentiment': v['sentence_sentiment'],
+                                                           'topic_sentiment': v['topic_sentiment'] } } )
                 count += 1
                 print 'Pass #{}'.format(count)
             except TypeError:
@@ -156,13 +176,14 @@ class TextSentimentAnalysis(object):
         topics_list = []
         article_ids = []
         article_topics = []
-        for doc in self.coll.find(snapshot = True).batch_size(25).limit(1000):
+        for doc in self.coll.find(snapshot = True).batch_size(25):
             try:
                 doc_id = doc['_id']
-                for k, v in doc['sentiment'].iteritems():
-                    topics_list.append(v['topic_features'])
+                topics = ['topic_0', 'topic_1', 'topic_2']
+                for topic in topics:
+                    topics_list.append(doc[topic]['topic_features'])
                     article_ids.append(doc_id)
-                    article_topics.append(k)
+                    article_topics.append(topic)
                 count += 1
                 print "Pass #{}".format(count)
             except:
@@ -174,8 +195,7 @@ class TextSentimentAnalysis(object):
         for index, doc_id in enumerate(article_ids):
             topic = article_topics[index]
             label = h_cluster[index].astype(np.int64)
-            print 'sentiment.' + topic + '.label', label
-            self.coll.find_one_and_update({'_id':doc_id}, {'$set':{'sentiment.'+ topic + '.label': label}})
+            self.coll.find_one_and_update({'_id':doc_id}, {'$set':{topic + '.label': label}})
 
         self._select_best_classifier(u, h_cluster)
 
@@ -184,14 +204,17 @@ class TextSentimentAnalysis(object):
     def classify_new_article(self, url):
         article = self.processor.new_article(url)
         vectorizer, vectorized = self.processor.generate_vectors(article)
-        art_pred, sentiments_dict = self._find_article_sentiment(article, vectorized, vectorizer)
+        sentiments_dict = self._find_article_sentiment(article, vectorized, vectorizer)
+        topic_dict = self._lda_dim_reduction(vectorized, vectorizer)
         try:
-            self.coll.insert_one({'url':url, 'article':article, 'sentiment':sentiments_dict})
+            self.coll.insert_one({'article':article, 'url':url, 'topic_0':list(topic_dict[0]),
+                                  'topic_1':list(topic_dict[1]), 'topic_2':list(topic_dict[2])})
         except pymongo.errors.DuplicateKeyError:
             print 'this url already exists I do not need to do anything with it'
+
         topics_list = []
-        for k, v in sentiments_dict.iteritems():
-            topics_list.append(v['topic_features'])
+        for k, v in topic_dict.iteritems():
+            topics_list.append(list(v))
         vectorized = self.processor._vectorize(topics_list).toarray()
         u = self._matrix_svd(vectorized)
         class_predict = self.cluster_classifier.predict(u)
@@ -221,7 +244,7 @@ class TextSentimentAnalysis(object):
 
 
 if __name__ == '__main__':
-    with open('local_access.txt','r') as f:
+    with open('small_local_access.txt','r') as f:
         access_tokens = []
         for line in f:
             line = line.strip()
@@ -231,17 +254,14 @@ if __name__ == '__main__':
     uri = 'mongodb://root:{}@localhost'.format(access_tokens[0])
     processor_filepath = '/home/bitnami/processor.pkl'
     lda_model_filepath = '/home/bitnami/lda_model.pkl'
-    classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
+    classifier_filepath = '/home/bitnami/sentiment_classifier.pkl'
     lexicon_filepath = '/home/bitnami/sentiment_lexicon.pkl'
     prep = TextPreprocessor(lemmatize = True, vectorizer = processor_filepath, lda_model = lda_model_filepath)
     sentiment_analyzer = TextSentimentAnalysis(classifier_filepath, lexicon_filepath, prep, db_name, coll_name, uri)
-    sentiment_analyzer.corpus_analytics() #only needs to be run the first time
+    # sentiment_analyzer.extract_topic_features()
     result = sentiment_analyzer.cluster_by_topic_similarity()
     article_ids, article_topics, svd_matrix, h_cluster = result
     print np.unique(np.array(h_cluster), return_counts = True)
+    sentiment_analyzer.corpus_analytics()
     url = 'http://www.foxnews.com/politics/2017/10/24/gop-sen-jeff-flake-says-wont-seek-re-election-in-2018.html'
-    result = sentiment_analyzer.classify_new_article(url)
-    prediction, sentiments = result
-    print prediction
-    article_dict = sentiment_analyzer.report_for_article(prediction, sentiments, article_ids, article_topics, h_cluster)
-    print article_dict
+    class_predict, sentiments_dict = sentiment_analyzer.classify_new_article(url)

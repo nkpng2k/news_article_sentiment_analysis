@@ -174,7 +174,7 @@ class TextPreprocessor(object):
         print "success TFIDF Vectorizer and LDA Model have been trained"
 
 if __name__ == "__main__":
-    with open('local_access.txt','r') as f:
+    with open('small_local_access.txt','r') as f:
         access_tokens = []
         for line in f:
             line = line.strip()

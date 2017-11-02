@@ -99,7 +99,7 @@ if __name__ == "__main__":
     svd_reducer = '/home/bitnami/svd_model.pkl'
     db_name = 'news_articles'
     coll_name = 'sentiment_labels'
-    uri = 'mongodb://root:9EThDhBJiBGP@localhost'
+    uri = 'mongodb://root:TWV7Y1t7hS7P@localhost'
 
     rand_forest = RandomForestClassifier()
     rand_forest_params = {'n_estimators': [10,100,1000], 'max_features': [0.1, 0.2, 0.5, 0.8], 'min_samples_split': [2, 4, 8]}

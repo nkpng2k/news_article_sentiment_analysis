@@ -1,21 +1,20 @@
 from preprocessor_mk1 import TextPreprocessor
 from textblob import TextBlob
-from textblob.classifiers import NaiveBayesClassifier
-from sklearn.decomposition import LatentDirichletAllocation, TruncatedSVD
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.decomposition import TruncatedSVD
 from collections import defaultdict, Counter
-from sklearn.metrics.pairwise import cosine_similarity
 from topic_classifier import pick_classifier
-import outside_functions as of
 import scipy.cluster.hierarchy as hac
 import pickle
 import pymongo
 import random
 import numpy as np
 
+
 class TextSentimentAnalysis(object):
 
-    def __init__(self, classifier_filepath, sentiment_lexicon_path, processor, db_name, coll_name, uri):
+    def __init__(self, classifier_filepath, sentiment_lexicon_path, processor,
+                 db_name, coll_name, uri):
+
         self.coll = self._launch_mongo(db_name, coll_name, uri)
         with open(classifier_filepath, 'rb') as f:
             self.sentiment_classifier = pickle.load(f)
@@ -29,26 +28,27 @@ class TextSentimentAnalysis(object):
         self.cluster_classifier = None
         print 'all dependencies loaded'
 
-    def _launch_mongo(self, db_name, coll_name, uri = None):
+    def _launch_mongo(self, db_name, coll_name, uri=None):
         mc = pymongo.MongoClient(uri)
         db = mc[db_name]
         coll = db[coll_name]
         return coll
 
     def _create_blob(self, article):
-        blob = TextBlob(article, classifier = self.sentiment_classifier)
+        blob = TextBlob(article, classifier=self.sentiment_classifier)
         return blob
 
     def _simple_sentiment(self, word):
         sentiment = self.sentiment_lexicon.get(word, 0)
         return sentiment
 
-    def _return_top_words(self, doc_top_dist, feature_names, n_top_words = 50):
+    def _return_top_words(self, doc_top_dist, feature_names, n_top_words=50):
         index = np.argpartition(doc_top_dist, -3)[-3:]
         topic_dict = {}
         for top_num, ind in enumerate(index):
             topic = self.processor.lda_model.components_[ind]
-            topic_top_n_words = set([feature_names[i] for i in topic.argsort()[:-n_top_words - 1:-1]])
+            topic_top_n_words = set([feature_names[i] for i in
+                                    topic.argsort()[:-n_top_words - 1:-1]])
             topic_dict[top_num] = topic_top_n_words
 
         return topic_dict
@@ -62,14 +62,14 @@ class TextSentimentAnalysis(object):
         return topic_dict
 
     def _sentiment_per_sentence(self, topic_dict, blob):
-        sentiments_dict = defaultdict(lambda : defaultdict(list))
+        sentiments_dict = defaultdict(lambda: defaultdict(list))
         for k, v in topic_dict.iteritems():
             predictions = Counter()
             topic_sentences = []
             sentence_sentiment = []
             for sentence in blob.sentences:
                 sent_set = set(self.processor._tokenize(sentence))
-                if len(v.intersection(sent_set)) > 1: #2 is an arbitrary number
+                if len(v.intersection(sent_set)) > 1:  # arbitrary number
                     sent_set = [sent_set]
                     sent_vect = self.processor._vectorize(sent_set)
                     prediction = self.sentiment_classifier.predict(sent_vect)[0]
@@ -99,7 +99,7 @@ class TextSentimentAnalysis(object):
         return skl_u
 
     def _train_trunc_svd(self, matrix):
-        self.tsvd = TruncatedSVD(n_components = 100, n_iter = 50).fit(matrix)
+        self.tsvd = TruncatedSVD(n_components=100, n_iter=50).fit(matrix)
         for i in xrange(len(self.tsvd.explained_variance_ratio_)):
             if self.tsvd.explained_variance_ratio_[:i].sum() > self.exp_var_desired:
                 print i, self.tsvd.explained_variance_ratio_[:i].sum()
@@ -113,8 +113,8 @@ class TextSentimentAnalysis(object):
         self._train_trunc_svd(vectorized)
         skl_u = self._matrix_svd(vectorized)
         # dist = 1 - cosine_similarity(skl_u)
-        link_matrix = hac.linkage(skl_u, metric = 'cosine', method = 'average')
-        h_cluster = hac.fcluster(link_matrix, t = 0.05, criterion = 'distance')
+        link_matrix = hac.linkage(skl_u, metric='cosine', method='average')
+        h_cluster = hac.fcluster(link_matrix, t=0.05, criterion='distance')
 
         self.n_h_clusters = len(np.unique(np.array(h_cluster)))
 
@@ -131,7 +131,7 @@ class TextSentimentAnalysis(object):
     def extract_topic_features(self):
         count, error_count = 0, 0
         print "Using LDA to Extract Topic Features"
-        for doc in self.coll.find(snapshot = True).batch_size(25):
+        for doc in self.coll.find(snapshot=True).batch_size(25):
             try:
                 doc_id = doc['_id']
                 article = doc['article']
@@ -139,7 +139,7 @@ class TextSentimentAnalysis(object):
                 vectorizer, vectorized_tokens = self.processor.generate_vectors(cleaned)
                 topic_dict = self._lda_dim_reduction(vectorized_tokens, vectorizer)
                 for k, v in topic_dict.iteritems():
-                    self.coll.find_one_and_update({'_id': doc_id}, {'$set': {'topic_{}'.format(k): {'topic_features': list(v)} } } )
+                    self.coll.find_one_and_update({'_id': doc_id}, {'$set': {'topic_{}'.format(k): {'topic_features': list(v)}}})
                 count += 1
                 print 'Success # {}'.format(count)
             except TypeError:
@@ -149,13 +149,13 @@ class TextSentimentAnalysis(object):
                 error_count += 1
                 print 'ValueError, Moving on. Error # {}'.format(error_count)
 
-    def cluster_by_topic_similarity(self, desired_exp_var = 0.9):
+    def cluster_by_topic_similarity(self, desired_exp_var=0.9):
         self.exp_var_desired = desired_exp_var
         count, error_count = 0, 0
         topics_list = []
         article_ids = []
         article_topics = []
-        for doc in self.coll.find(snapshot = True).batch_size(25):
+        for doc in self.coll.find(snapshot=True).batch_size(25):
             try:
                 doc_id = doc['_id']
                 topics = ['topic_0', 'topic_1', 'topic_2']
@@ -174,7 +174,7 @@ class TextSentimentAnalysis(object):
         for index, doc_id in enumerate(article_ids):
             topic = article_topics[index]
             label = h_cluster[index].astype(np.int64)
-            self.coll.find_one_and_update({'_id':doc_id}, {'$set':{topic + '.label': label}})
+            self.coll.find_one_and_update({'_id': doc_id}, {'$set': {topic + '.label': label}})
 
         self._select_best_classifier(u, h_cluster)
 
@@ -183,7 +183,7 @@ class TextSentimentAnalysis(object):
     def corpus_analytics(self):
         count, error_count = 0, 0
         print 'Analyzing Articles and Storing in Mongo'
-        for doc in self.coll.find(snapshot = True).batch_size(25):
+        for doc in self.coll.find(snapshot=True).batch_size(25):
             try:
                 doc_id = doc['_id']
                 article = doc['article']
@@ -191,10 +191,10 @@ class TextSentimentAnalysis(object):
                 vectorizer, vectorized_tokens = self.processor.generate_vectors(cleaned)
                 sentiments_dict = self._find_article_sentiment(cleaned, vectorized_tokens, vectorizer)
                 for k, v in sentiments_dict.iteritems():
-                    self.coll.find_one_and_update({'_id':doc_id},
+                    self.coll.find_one_and_update({'_id': doc_id},
                                                   {'$set': {k + '.sentences': v['sentences'],
                                                             k + '.sentence_sentiment': v['sentence_sentiment'],
-                                                            k + '.topic_sentiment': v['topic_sentiment'] } } )
+                                                            k + '.topic_sentiment': v['topic_sentiment']}})
                 count += 1
                 print 'Pass #{}'.format(count)
             except TypeError:
@@ -209,12 +209,15 @@ class TextSentimentAnalysis(object):
         article = self.processor.new_article(url)
         vectorizer, vectorized = self.processor.generate_vectors(article)
         topic_dict = self._lda_dim_reduction(vectorized, vectorizer)
-        sentiments_dict = self._find_article_sentiment(article, vectorized, vectorizer)
+        sentiments_dict = self._find_article_sentiment(article,
+                                                       vectorized, vectorizer)
         try:
-            self.coll.insert_one({'article':article, 'url':url, 'topic_0':list(topic_dict[0]),
-                                  'topic_1':list(topic_dict[1]), 'topic_2':list(topic_dict[2])})
+            self.coll.insert_one({'article': article, 'url': url,
+                                  'topic_0': list(topic_dict[0]),
+                                  'topic_1': list(topic_dict[1]),
+                                  'topic_2': list(topic_dict[2])})
         except pymongo.errors.DuplicateKeyError:
-            print 'this url already exists I do not need to do anything with it'
+            print 'this url already exists I do not need to do anything'
 
         topics_list = []
         for k, v in topic_dict.iteritems():
@@ -225,15 +228,16 @@ class TextSentimentAnalysis(object):
 
         return class_predict, sentiments_dict
 
-    #TODO: THIS NEEDS TO BE FIXED ASAP
-    def report_for_article(self, class_predict, sentiments_dict, article_ids, article_topics, h_cluster):
+    def report_for_article(self, class_predict, sentiments_dict, article_ids,
+                           article_topics, h_cluster):
+
         article_dict = defaultdict(list)
         for i, classification in enumerate(class_predict):
             index = np.argwhere(np.array(h_cluster) == classification)
             for ind in index:
                 doc_id = article_ids[ind[0]]
                 topic = article_topics[ind[0]]
-                document = self.coll.find_one({'_id':doc_id})
+                document = self.coll.find_one({'_id': doc_id})
                 try:
                     doc_sentiments = document[topic]['topic_sentiment']
                 except KeyError:
@@ -247,7 +251,7 @@ class TextSentimentAnalysis(object):
 
 
 if __name__ == '__main__':
-    with open('local_access.txt','r') as f:
+    with open('local_access.txt', 'r') as f:
         access_tokens = []
         for line in f:
             line = line.strip()

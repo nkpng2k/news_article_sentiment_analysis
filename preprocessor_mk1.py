@@ -12,20 +12,22 @@ from nltk.stem.wordnet import WordNetLemmatizer
 from nltk.corpus import wordnet
 from bs4 import BeautifulSoup
 
+
 class TextPreprocessor(object):
 
-    def __init__(self, stop_words = 'en', tfidf = True, lemmatize = False, vectorizer = None, lda_model = None):
+    def __init__(self, stop_words='en', tfidf=True, lemmatize=False,
+                 vectorizer=None, lda_model=None):
         self.stop_words = get_stop_words(stop_words)
         self.tfidf = tfidf
         self.lemmatize = lemmatize
-        if vectorizer != None:
+        if vectorizer is not None:
             with open(vectorizer, 'rb') as f:
                 self.vectorizer = pickle.load(f)
             print "loaded pickled vectorizer"
         else:
             self.vectorizer = vectorizer
 
-        if lda_model != None:
+        if lda_model is not None:
             with open(lda_model, 'rb') as f:
                 self.lda_model = pickle.load(f)
                 print "loaded pickled lda model"
@@ -86,14 +88,15 @@ class TextPreprocessor(object):
             re_tagged.append((word, tag))
         lemmed = []
         for word, tag in re_tagged:
-            lem_word = lemmatizer.lemmatize(word, pos = tag)
+            lem_word = lemmatizer.lemmatize(word, pos=tag)
             lemmed.append(lem_word)
         return lemmed
 
     def _tokenize(self, article):
         stopped_tokens = self._remove_stop_words(article)
         encoded_tokens = self._encode_ascii(stopped_tokens)
-        no_just_punc_tokens = [tok for tok in encoded_tokens if tok not in string.punctuation]
+        no_just_punc_tokens = [tok for tok in encoded_tokens
+                               if tok not in string.punctuation]
         if self.lemmatize:
             lemmed_tokens = self._lemmatize(no_just_punc_tokens)
             return lemmed_tokens
@@ -106,8 +109,11 @@ class TextPreprocessor(object):
         return vectorized
 
     def _train_lda(self, vectorized_documents):
-        lda = LatentDirichletAllocation(n_components = 300, learning_method = 'batch',
-                                        max_iter = 50, n_jobs = -1, verbose = 5).fit(vectorized_documents)
+        lda = LatentDirichletAllocation(n_components=300,
+                                        learning_method='batch',
+                                        max_iter=50,
+                                        n_jobs=-1,
+                                        verbose=5).fit(vectorized_documents)
         self.lda_model = lda
 
     # ----------- private methods above this line -----------
@@ -135,11 +141,13 @@ class TextPreprocessor(object):
 
         return self.vectorizer, vectorized_tokens
 
-    def db_pipeline(self, processor_filepath, lda_model_filepath, db_name, coll_name, uri = None):
+    def db_pipeline(self, processor_filepath, lda_model_filepath, db_name,
+                    coll_name, uri=None):
+
         coll = self._launch_mongo(db_name, coll_name, uri)
         all_docs = []
         error_counter, success = 0, 0
-        for doc in coll.find(snapshot = True).batch_size(25):
+        for doc in coll.find(snapshot=True).batch_size(25):
             try:
                 cleaned = self._correct_sentences(doc['article'])
                 cleaned_tokens = self._tokenize(cleaned)
@@ -152,13 +160,17 @@ class TextPreprocessor(object):
                 print 'TypeError, Moving On. Error #{}'.format(error_counter)
 
         if self.tfidf:
-            self.vectorizer = TfidfVectorizer(preprocessor = of.tfidf_lambda, tokenizer = of.tfidf_lambda,
-                                              min_df = 0.00005, max_df = 0.90).fit(all_docs)
+            self.vectorizer = TfidfVectorizer(preprocessor=of.tfidf_lambda,
+                                              tokenizer=of.tfidf_lambda,
+                                              min_df=0.00005,
+                                              max_df=0.90).fit(all_docs)
         else:
-            self.vectorizer = CountVectorizer(preprocessor = of.tfidf_lambda, tokenizer = of.tfidf_lambda,
-                                               min_df = 0.00005, max_df = 0.90).fit(all_docs)
+            self.vectorizer = CountVectorizer(preprocessor=of.tfidf_lambda,
+                                              tokenizer=of.tfidf_lambda,
+                                              min_df=0.00005,
+                                              max_df=0.90).fit(all_docs)
 
-        print len(self.vectorizer.vocabulary_) , 'training lda'
+        print len(self.vectorizer.vocabulary_), 'training lda'
 
         vectorized_docs = self.vectorizer.transform(all_docs)
         self._train_lda(vectorized_docs)
@@ -173,8 +185,9 @@ class TextPreprocessor(object):
 
         print "success TFIDF Vectorizer and LDA Model have been trained"
 
+
 if __name__ == "__main__":
-    with open('local_access.txt','r') as f:
+    with open('local_access.txt', 'r') as f:
         access_tokens = []
         for line in f:
             line = line.strip()
@@ -185,5 +198,5 @@ if __name__ == "__main__":
     processor_filepath = '/home/bitnami/processor.pkl'
     classifier_filepath = '/home/bitnami/naivebayesclassifier.pkl'
     lda_model = '/home/bitnami/lda_model.pkl'
-    prep = TextPreprocessor(lemmatize = True)
+    prep = TextPreprocessor(lemmatize=True)
     prep.db_pipeline(processor_filepath, lda_model, db_name, coll_name, uri)

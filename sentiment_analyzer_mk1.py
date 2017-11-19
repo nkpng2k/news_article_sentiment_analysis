@@ -263,18 +263,25 @@ if __name__ == '__main__':
     lda_model_filepath = '/home/bitnami/lda_model.pkl'
     classifier_filepath = '/home/bitnami/sentiment_classifier.pkl'
     lexicon_filepath = '/home/bitnami/sentiment_lexicon.pkl'
-    prep = TextPreprocessor(lemmatize = True, vectorizer = processor_filepath, lda_model = lda_model_filepath)
-    sentiment_analyzer = TextSentimentAnalysis(classifier_filepath, lexicon_filepath, prep, db_name, coll_name, uri)
+    prep = TextPreprocessor(lemmatize=True, vectorizer=processor_filepath,
+                            lda_model=lda_model_filepath)
+    sentiment_analyzer = TextSentimentAnalysis(classifier_filepath,
+                                               lexicon_filepath,
+                                               prep, db_name, coll_name, uri)
     # sentiment_analyzer.extract_topic_features()
     result = sentiment_analyzer.cluster_by_topic_similarity()
     article_ids, article_topics, svd_matrix, h_cluster = result
-    print np.unique(np.array(h_cluster), return_counts = True)
+    print np.unique(np.array(h_cluster), return_counts=True)
     sentiment_analyzer.corpus_analytics()
     # url = 'http://www.cnn.com/2017/10/29/politics/angus-king-collusion-calls-sotu/index.html'
     url = 'http://www.cnn.com/2017/11/01/politics/trump-justice-laughing-stock/index.html'
     class_predict, sentiments_dict = sentiment_analyzer.classify_new_article(url)
     article_dict = sentiment_analyzer.report_for_article(class_predict,
-                                                         sentiments_dict, article_ids, article_topics, h_cluster)
+                                                         sentiments_dict,
+                                                         article_ids,
+                                                         article_topics,
+                                                         h_cluster)
+
     print random.choice(article_dict[0])
     print random.choice(article_dict[1])
     print random.choice(article_dict[2])
